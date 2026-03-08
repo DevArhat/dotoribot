@@ -1,6 +1,7 @@
 import datetime
 import math
 import os
+import json
 
 import aiohttp
 
@@ -15,6 +16,10 @@ class LostArkGuardian:
             "암구", "토구", "토구", "뇌구", "세구", "화구", "암구", "화구"
         ]
         self.anchor_date = datetime.datetime(2026, 3, 4, 6, 0, 0, tzinfo=self.kst)
+        
+    def get_lostark_weekly_info_predict(self, year, month, day):
+        target_date = datetime.datetime(year, month, day, 10, 0, 0, tzinfo=self.kst)
+        return self.get_lostark_weekly_info(target_date)
         
     def get_lostark_weekly_info(self, target_date=None):
         kst = datetime.timezone(datetime.timedelta(hours=9))
@@ -99,14 +104,14 @@ def calc_logic(price, dotoris):
         distribution_per_person,
         winner_profit
     )
-    return f"""# {result_tuple[1]}
+    return (f"""# {result_tuple[1]}
 ```python
 # 설명도토리
 거래소: {result_tuple[0]:,} 골드
 인원수: {dotoris} 명
 입찰가: {result_tuple[1]:,} 골드
 분배금: {result_tuple[2]:,} 골드
-판매금: {result_tuple[3]:,} 골드```"""
+판매금: {result_tuple[3]:,} 골드```""", result_tuple)
 
 async def run_vercel(ctx, game, dolpa):
     api_url = f"https://gacha-simulator-api.vercel.app/simulate/{game}/{dolpa}"
@@ -147,3 +152,36 @@ async def run_vercel(ctx, game, dolpa):
                 await ctx.response.send_message(result)
             else:
                 await ctx.response.send_message(f"API 요청 실패: {response.status}")
+                
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
+TIME_TABLE_PATH = os.path.join(BASE_DIR, 'time_table.json')
+
+def add_log(target, command, details='No Details'):
+    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
+    
+    user = target.author if hasattr(target, 'author') else target.user
+    username = user.display_name or str(user)
+    
+    msg = f"[{now}] {username}({user.id}) | {command} | {details}"
+
+    with open(LOG_PATH, 'a', encoding='utf-8') as log_file:
+        log_file.write(msg + '\n')
+
+def load_time_table():
+    if os.path.exists(TIME_TABLE_PATH):
+        try:
+            with open(TIME_TABLE_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print("Error decoding JSON from time_table.json")
+            return {}
+    return {}
+
+def refresh_time_table(data):
+    try:
+        with open(TIME_TABLE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error writing to time_table.json: {e}")
