@@ -3,16 +3,13 @@
 
 
 import random
-import datetime
 import os
 import json
-import re
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-from logic import LostArkGuardian
 from logic import *
 
 class DotoriBot(commands.Bot):
@@ -28,7 +25,7 @@ bot = DotoriBot()
 
 load_dotenv()
 
-SPACE_REMOVER = re.compile(r'\s{2,}')
+sc = SpaceController()
 
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -105,7 +102,7 @@ async def usage(ctx):
   ㄴ 특정 날짜 가디언 예측하기
 
 /뽑기 [게임명] [돌파]
-  ㄴ 뽑기 시뮬레이터
+  ㄴ 뽑기 시뮬레이터 (게임명 잘못 쓰면 붕스가 기본값됨)
 
 # 기타 잡다한 명령어
 !안녕   : 인사하기
@@ -246,11 +243,11 @@ async def refresh_time_table_command(ctx, data: str):
         json_data = json.loads(data)
         TIME_TABLE.update(json_data)
         refresh_time_table(json_data)
-        SPACE_REMOVER.sub(' ', data)
+        sc.replace_space(data)
         add_log(ctx, "/시간표갱신", f"성공 // 입력 데이터: {data}")
         await ctx.send("시간표가 성공적으로 갱신되었습니다.")
     except json.JSONDecodeError:
-        SPACE_REMOVER.sub(' ', data)
+        sc.remove_space(data)
         add_log(ctx, "/시간표갱신", f"실패 // 입력 데이터: {data}")
         await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.")
         
@@ -290,19 +287,7 @@ async def get_everyone_time_table(ctx):
     dolpa="숫자만, 명함은 0"
 )
 async def pull(ctx, game: str, dolpa: int):
-    game_key = ''
-    if game == "원신":
-        game_key = 'gen'
-    elif game in ["붕스", "스타레일", "붕괴", "붕괴스타레일"]:
-        game_key = 'hsr'
-    elif game in ["젠존제", "찢", "젠레스", "젠레스존제로"]:
-        game_key = 'zzz'
-    elif game in ["명조", "띵조"]:
-        game_key = 'wuwa'
-    elif game in ["엔필", "엔드필드"]:
-        game_key = 'end'
-    else:
-        game_key = 'hsr'
+    game_key = get_game_key(game)
     
     add_log(ctx, "/뽑기", f"게임: {game}(매칭결과: {game_key}), 돌파: {dolpa}")
 

@@ -2,8 +2,27 @@ import datetime
 import math
 import os
 import json
+import re
 
 import aiohttp
+
+
+class SpaceController:
+    _SPACE_REPLACER = re.compile(r'\s{2,}')
+    _SPACE_REMOVER = re.compile(r'\s')
+    _NEWLINE_REMOVER = re.compile(r'\r?\n')
+    
+    def __init__(self):
+        pass
+    
+    def replace_space(self, text):
+        result_text = self._NEWLINE_REMOVER.sub('', text)
+        result_text = self._SPACE_REPLACER.sub(' ', result_text)
+        return result_text
+    
+    def remove_space(self, text):
+        return self._SPACE_REMOVER.sub('', text)
+        
 
 class LostArkGuardian:
     def __init__(self):
@@ -185,3 +204,20 @@ def refresh_time_table(data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Error writing to time_table.json: {e}")
+        
+def get_game_key(game):
+    game_map = {
+        'gen': ["원신"],
+        'hsr': ["붕스", "스타레일", "붕괴"],
+        'zzz': ["젠존제", "찢", "젠레스"],
+        'wuwa': ["명조", "띵조"],
+        'end': ["엔필", "엔드필드"]
+    }
+    
+    game = game.replace(" ", "")
+
+    for key, keywords in game_map.items():
+        if any(kw in game for kw in keywords):
+            return key
+
+    return 'hsr'
