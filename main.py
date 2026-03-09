@@ -251,7 +251,7 @@ def build_bot(logger_func):
             
             final_msg += response_text
             
-            await ctx.send(response_text)
+        await ctx.send(final_msg, ephemeral=True)
         
         
     @bot.tree.command(name="뽑기", description="뽑기 시뮬레이터")
@@ -272,13 +272,14 @@ def build_bot(logger_func):
     )
     async def get_stock_price(ctx, name):
         data = st.get_stock_info(name)
-        
+        set_ephemeral = False
         if str(os.getenv('ANGRY_KOKO')) in data:
             bot.add_log(ctx, "/주식", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip()}")
             data = data.split('$')[0].strip()
+            set_ephemeral = True
         else:
             bot.add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
-        await ctx.send(data)
+        await ctx.send(data, ephemeral=set_ephemeral)
         
         
 
