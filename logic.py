@@ -3,6 +3,7 @@ import math
 import os
 import json
 import re
+import FinanceDataReader as fdr
 
 import aiohttp
 
@@ -81,7 +82,108 @@ class LostArkGuardian:
                 f"{current_guardian}", f"{current_card}",
                 f"{next_start_str} ~ {next_end_str}",
                 f"{next_guardian}", f"{next_card}")
+        
 
+class StockInfo:
+    STOCK_DATA = {
+        "005930": ["삼성전자", "삼전", "스캠전자", "개미지옥"],
+        "000660": ["SK하이닉스", "하이닉스", "하닉"],
+        "012450": ["한화에어로스페이스", "한화에어로", "에어로", "자주포", "K9"],
+        "005380": ["현대차", "현차", "현대"],
+        "042660": ["한화오션", "오션"],
+        "064350": ["현대로템", "로템"],
+        "079550": ["LIG넥스원", "넥스원"],
+        "272210": ["한화시스템"],
+        "252670": ["곱버스"]
+    }
+    
+    STOCK_ALIAS = {}
+
+    def __init__(self):    
+        for code, aliases in self.STOCK_DATA.items():
+            for alias in aliases:
+                self.STOCK_ALIAS[alias] = code
+    
+    def get_stock_info(self, input: str):
+        if len(input)==6 and input.isalnum():
+            ticker=input
+        else:
+            ticker=str(self.STOCK_ALIAS[input]) if input in self.STOCK_ALIAS else input
+            
+        try:
+            df = fdr.DataReader(ticker, start = "", end = "")
+            if df is None or df.empty:
+                raise ValueError("Empty DataFrame")
+        except Exception as e:
+            return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류거나 입력이 잘못됨 $ {e}"
+        
+        
+        data = {
+            "prev": df.iloc[-2],
+            "today": df.iloc[-1]
+        }
+        
+        return self.arrange_data(data, ticker)
+    
+    def arrange_data(self, data:dict, ticker:str):
+        prev_open = int(data['prev']['Open'])
+        prev_close = int(data['prev']['Close'])
+        prev_high = int(data['prev']['High'])
+        prev_low = int(data['prev']['Low'])
+        prev_volume = int(data['prev']['Volume'])
+        
+        today_open = int(data['today']['Open'])
+        today_close = int(data['today']['Close'])
+        today_high = int(data['today']['High'])
+        today_low = int(data['today']['Low'])
+        today_volume = int(data['today']['Volume'])
+        
+        prev_change = (data['prev']['Change'])*100
+        today_change = (data['today']['Change'])*100
+        
+        prev_date = data['prev'].name.strftime("%Y-%m-%d")
+        today_date = data['today'].name.strftime("%Y-%m-%d")
+        
+        price_gap = today_close - prev_close
+        up_or_down = ''
+        
+        if price_gap < 0:
+            price_gap_str = f"-{-price_gap:,.0f}"
+            up_or_down = '📉'
+        elif price_gap > 0:
+            price_gap_str = f"+{price_gap:,.0f}"
+            up_or_down = '📈'
+        else:
+            price_gap_str = f"{price_gap:,.0f}"
+        
+        if prev_change < 0:
+            prev_change_str = f"-{-prev_change:.2f}%"
+        elif prev_change > 0:
+            prev_change_str = f"+{prev_change:.2f}%"
+        else:
+            prev_change_str = f"{prev_change:.2f}%"
+
+        if today_change < 0:
+            today_change_str = f"-{-today_change:.2f}%"
+        elif today_change > 0:
+            today_change_str = f"+{today_change:.2f}%"
+        else:
+            today_change_str = f"{today_change:.2f}%"
+        
+        msg = f"""# {self.STOCK_DATA[ticker][0]} : {up_or_down} {today_close:,.0f} ( {price_gap_str} | {today_change_str} )
+```markdown
+{self.STOCK_DATA[ticker][0]} ({ticker}) 가격정보
+날짜: {today_date:^10} || {prev_date}
+시가: {today_open:^10,.0f} || {prev_open:^10,.0f}
+종가: {today_close:^10,.0f} || {prev_close:^10,.0f}
+고가: {today_high:^10,.0f} || {prev_high:^10,.0f}
+저가: {today_low:^10,.0f} || {prev_low:^10,.0f}
+등락: {today_change_str:^10} || {prev_change_str:^10}
+거래량: {today_volume:^10,.0f} || {prev_volume:^10,.0f}
+```
+"""
+        return msg
+        
 
 def calc_logic(price, dotoris):        
     if dotoris not in [4,8,16]:
@@ -174,6 +276,7 @@ async def run_vercel(ctx, game, dolpa):
                 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
+TEST_LOG_PATH = os.path.join(BASE_DIR, 'test.log')
 TIME_TABLE_PATH = os.path.join(BASE_DIR, 'time_table.json')
 
 def add_log(target, command, details='No Details'):
@@ -187,7 +290,20 @@ def add_log(target, command, details='No Details'):
 
     with open(LOG_PATH, 'a', encoding='utf-8') as log_file:
         log_file.write(msg + '\n')
+        
+def add_test_log(target, command, details='No Details'):
+    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
+    
+    user = target.author if hasattr(target, 'author') else target.user
+    username = user.display_name or str(user)
+    
+    msg = f"[{now}] {username}({user.id}) | {command} | {details}"
 
+    with open(TEST_LOG_PATH, 'a', encoding='utf-8') as log_file:
+        log_file.write(msg + '\n')
+    
+    
 def load_time_table():
     if os.path.exists(TIME_TABLE_PATH):
         try:
