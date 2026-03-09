@@ -3,6 +3,7 @@ import math
 import os
 import json
 import re
+import FinanceDataReader as fdr
 
 import aiohttp
 
@@ -81,7 +82,88 @@ class LostArkGuardian:
                 f"{current_guardian}", f"{current_card}",
                 f"{next_start_str} ~ {next_end_str}",
                 f"{next_guardian}", f"{next_card}")
+        
 
+class StockInfo:
+    STOCK_DATA = {
+        "005930": ["삼성전자", "삼전", "스캠전자", "개미지옥"],
+        "000660": ["SK하이닉스", "하이닉스", "하닉"],
+        "012450": ["한화에어로스페이스", "한화에어로", "에어로", "자주포", "K9"],
+        "005380": ["현대차", "현차", "현대"],
+        "042660": ["한화오션", "오션"],
+        "064350": ["현대로템", "로템"],
+        "079550": ["LIG넥스원", "넥스원"],
+        "272210": ["한화시스템"],
+        "252670": ["곱버스"]
+    }
+    
+    STOCK_ALIAS = {}
+
+    def __init__(self):    
+        for code, aliases in self.STOCK_DATA.items():
+            for alias in aliases:
+                self.STOCK_ALIAS[alias] = code
+    
+    def get_stock_info(self, input: str):
+        if len(input)==6 and input.isalnum():
+            ticker=input
+        else:
+            ticker=str(self.STOCK_ALIAS[input]) if input in self.STOCK_ALIAS else input
+            
+        try:
+            df = fdr.DataReader(ticker, start = "", end = "")
+            if df is None or df.empty:
+                raise ValueError("Empty DataFrame")
+        except Exception as e:
+            return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류거나 입력이 잘못됨 $ {e}"
+        
+        
+        data = {
+            "prev": df.iloc[-2],
+            "today": df.iloc[-1]
+        }
+        
+        return self.arrange_data(data, ticker)
+    
+    def arrange_data(self, data:dict, ticker:str):
+        prev_open = int(data['prev']['Open'])
+        prev_close = int(data['prev']['Close'])
+        prev_high = int(data['prev']['High'])
+        prev_low = int(data['prev']['Low'])
+        prev_volume = int(data['prev']['Volume'])
+        
+        today_open = int(data['today']['Open'])
+        today_close = int(data['today']['Close'])
+        today_high = int(data['today']['High'])
+        today_low = int(data['today']['Low'])
+        today_volume = int(data['today']['Volume'])
+        
+        prev_change = (data['prev']['Change'])*100
+        today_change = (data['today']['Change'])*100
+        
+        price_gap = today_close - prev_close
+        if price_gap < 0:
+            price_gap_str = f"📉 {-price_gap:,.0f}"
+        elif price_gap > 0:
+            price_gap_str = f"📈 {price_gap:,.0f}"
+        else:
+            price_gap_str = f" {price_gap:,.0f}"
+        
+
+        
+        msg = f"""# {self.STOCK_DATA[ticker][0]} : {today_close:,.0f} ({price_gap_str} | {today_change:.2f}%)
+```markdown
+{self.STOCK_DATA[ticker][0]} ({ticker}) 가격정보 (괄호 안은 이전 거래일)
+시가: {today_open:,.0f} ({prev_open:,.0f})
+종가: {today_close:,.0f} ({prev_close:,.0f})
+고가: {today_high:,.0f} ({prev_high:,.0f})
+저가: {today_low:,.0f} ({prev_low:,.0f})
+거래량: {today_volume:,.0f} ({prev_volume:,.0f})
+등락률: {today_change:.2f}% ({prev_change:.2f}%)
+```
+"""
+        return msg
+        
 
 def calc_logic(price, dotoris):        
     if dotoris not in [4,8,16]:

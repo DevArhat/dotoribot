@@ -27,9 +27,9 @@ bot = DotoriBot()
 sc = SpaceController()
 st = StockInfo()
 
-print("MAIN TOKEN 로그인 중 . . .")
+print("TEST TOKEN 로그인 중 . . .")
 
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('DISCORD_TEST_TOKEN')
 
 # BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
@@ -69,6 +69,7 @@ TIME_TABLE = load_time_table()
 # 인텐트 설정 (메시지 내용을 읽기 위해 필수)
 intents = discord.Intents.default()
 intents.message_content = True
+
 
 
 @bot.event
@@ -303,10 +304,13 @@ async def get_stock_price(ctx, name):
     data = st.get_stock_info(name)
     
     if str(os.getenv('ANGRY_KOKO')) in data:
-        add_log(ctx, "/주식", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip}")
-        data = data.split('$')[0].strip
-    add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
+        add_log(ctx, "/주식", f"실패 // 입력 데이터: {name} return: {data.split('$')[1].strip()}")
+        data = data.split('$')[0].strip()
+    else: 
+        add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
     await ctx.send(data)
+    
+    
     
     
 

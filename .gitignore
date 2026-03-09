@@ -4,3 +4,4 @@ __pycache__/
 test*.py
 bot.log
 time_table.json
+!test.py
