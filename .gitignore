@@ -1,7 +1,8 @@
 .venv/
 __pycache__/
 *.env
-test*.py
+test*
 bot.log
 time_table.json
 !test.py
+test/
