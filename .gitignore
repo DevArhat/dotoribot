@@ -6,3 +6,4 @@ bot.log
 time_table.json
 !test.py
 test/
+*.db

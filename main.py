@@ -72,7 +72,7 @@ def build_bot(logger_func):
 ㄴ 뽑기 시뮬레이터 (게임명 잘못 쓰면 붕스가 기본값됨)
 
 /주식 [회사명 or 티커 번호]
-ㄴ 주가 보기 (지원: 삼성전자, SK하이닉스, 한화에어로스페이스, 현대차, 한화오션, 현대로템, LIG넥스원, 한화시스템, 곱버스)
+ㄴ 주가 보기 (KOSPI만 지원, ETF도 몇개 됨)
 
 # 기타 잡다한 명령어
 !안녕   : 인사하기
@@ -83,7 +83,7 @@ def build_bot(logger_func):
 # 구현 도전 중
 /시간표 : 내가 가는 레이드 시간 보여주기
 ```"""
-        await ctx.send(help_text)
+        await ctx.send(help_text, ephemeral=True)
 
     # !안녕 명령어
     @bot.command(name="안녕")
@@ -175,9 +175,9 @@ def build_bot(logger_func):
 
     @bot.tree.command(name="가디언예측", description="특정 날짜 가디언 예측하기")
     @app_commands.describe(
-        year="년 (예: 2024)",
-        month="월 (예: 6)",
-        day="일 (예: 30)"
+        year="년 (예: 2026)",
+        month="월 (예: 3)",
+        day="일 (예: 5)"
     )
     async def predict_guardian(ctx, year: int, month: int, day: int):
         bot.add_log(ctx, "/가디언예측", f"{year}-{month}-{day}")
@@ -215,11 +215,11 @@ def build_bot(logger_func):
             refresh_time_table(json_data)
             sc.replace_space(data)
             bot.add_log(ctx, "/시간표갱신", f"성공 // 입력 데이터: {data}")
-            await ctx.send("시간표가 성공적으로 갱신되었습니다.")
+            await ctx.send("시간표가 성공적으로 갱신되었습니다.", ephemeral=True)
         except json.JSONDecodeError:
             sc.remove_space(data)
             bot.add_log(ctx, "/시간표갱신", f"실패 // 입력 데이터: {data}")
-            await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.")
+            await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.", ephemeral=True)
             
     @bot.hybrid_command(name="시간표", description="내가 갈 레이드, 요일, 시간")
     async def get_time_table(ctx):
@@ -231,14 +231,15 @@ def build_bot(logger_func):
                 response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
             response_text += "```"
             bot.add_log(ctx, "/시간표조회", f"성공 // 사용자 ID: {user_id}")
-            await ctx.send(response_text)
+            await ctx.send(response_text, ephemeral=True)
         else:
             bot.add_log(ctx, "/시간표조회", f"실패 // 사용자 ID: {user_id} (정보 없음)")
-            await ctx.send("시간표 정보가 없습니다 ㅠㅠ")
+            await ctx.send("시간표 정보가 없습니다 ㅠㅠ", ephemeral=True)
 
     @bot.hybrid_command(name="전체시간표", description="저장되어 있는 전체 시간표 보기")
     async def get_everyone_time_table(ctx):
         bot.add_log(ctx, "/전체시간표")
+        final_msg = ''
         for user_id, raid_list in TIME_TABLE.items():
             user_obj = await bot.fetch_user(int(user_id))
             nick = user_obj.display_name
@@ -246,7 +247,9 @@ def build_bot(logger_func):
             response_text = f"**{nick}** 의 레이드 시간표입니다:\n```markdown\n"
             for raid in raid_list:
                 response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-            response_text += "```"
+            response_text += "```\n"
+            
+            final_msg += response_text
             
             await ctx.send(response_text)
         
@@ -273,7 +276,8 @@ def build_bot(logger_func):
         if str(os.getenv('ANGRY_KOKO')) in data:
             bot.add_log(ctx, "/주식", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip()}")
             data = data.split('$')[0].strip()
-        bot.add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
+        else:
+            bot.add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
         await ctx.send(data)
         
         

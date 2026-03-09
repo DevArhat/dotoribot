@@ -7,6 +7,11 @@ import FinanceDataReader as fdr
 
 import aiohttp
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
+KOSPI_TICKER_PATH = os.path.join(BASE_DIR, 'kospi_ticker.json')
+TEST_LOG_PATH = os.path.join(BASE_DIR, 'test.log')
+TIME_TABLE_PATH = os.path.join(BASE_DIR, 'time_table.json')
 
 class SpaceController:
     _SPACE_REPLACER = re.compile(r'\s{2,}')
@@ -85,7 +90,12 @@ class LostArkGuardian:
         
 
 class StockInfo:
-    STOCK_DATA = {
+    with open(KOSPI_TICKER_PATH, 'r', encoding='utf-8') as f:
+        stock_data = json.load(f)
+        
+    stock_data = {code: [name] for code, name in stock_data.items()}
+    
+    stock_alias = {
         "005930": ["삼성전자", "삼전", "스캠전자", "개미지옥"],
         "000660": ["SK하이닉스", "하이닉스", "하닉"],
         "012450": ["한화에어로스페이스", "한화에어로", "에어로", "자주포", "K9"],
@@ -94,28 +104,37 @@ class StockInfo:
         "064350": ["현대로템", "로템"],
         "079550": ["LIG넥스원", "넥스원"],
         "272210": ["한화시스템"],
+        "042700": ["한미반도체"],
         "252670": ["곱버스"]
     }
     
-    STOCK_ALIAS = {}
+    for code, aliases in stock_alias.items():
+        if code in stock_data:
+            stock_data[code].extend(aliases)
+        else:
+            stock_data[code] = aliases
+    
+    
+    ALIAS_MAP = {}
 
     def __init__(self):    
-        for code, aliases in self.STOCK_DATA.items():
+        for code, aliases in self.stock_data.items():
             for alias in aliases:
-                self.STOCK_ALIAS[alias] = code
+                self.ALIAS_MAP[alias] = code
     
     def get_stock_info(self, input: str):
-        if len(input)==6 and input.isalnum():
+        input = SpaceController().remove_space(input).strip().upper()
+        if bool(re.fullmatch(r'[A-Z0-9]{6}', input)):
             ticker=input
         else:
-            ticker=str(self.STOCK_ALIAS[input]) if input in self.STOCK_ALIAS else input
+            ticker=str(self.ALIAS_MAP[input]) if input in self.ALIAS_MAP else input
             
         try:
             df = fdr.DataReader(ticker, start = "", end = "")
             if df is None or df.empty:
                 raise ValueError("Empty DataFrame")
         except Exception as e:
-            return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류거나 입력이 잘못됨 $ {e}"
+            return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류 or 입력 잘못됨 or 봇에 등록 안함 $ {e}"
         
         
         data = {
@@ -170,9 +189,9 @@ class StockInfo:
         else:
             today_change_str = f"{today_change:.2f}%"
         
-        msg = f"""# {self.STOCK_DATA[ticker][0]} : {up_or_down} {today_close:,.0f} ( {price_gap_str} | {today_change_str} )
+        msg = f"""# {self.stock_data[ticker][0]} : {up_or_down} {today_close:,.0f} ( {price_gap_str} | {today_change_str} )
 ```markdown
-{self.STOCK_DATA[ticker][0]} ({ticker}) 가격정보
+{self.stock_data[ticker][0]} ({ticker}) 가격정보
 날짜: {today_date:^10} || {prev_date}
 시가: {today_open:^10,.0f} || {prev_open:^10,.0f}
 종가: {today_close:^10,.0f} || {prev_close:^10,.0f}
@@ -274,10 +293,7 @@ async def run_vercel(ctx, game, dolpa):
             else:
                 await ctx.response.send_message(f"API 요청 실패: {response.status}")
                 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
-TEST_LOG_PATH = os.path.join(BASE_DIR, 'test.log')
-TIME_TABLE_PATH = os.path.join(BASE_DIR, 'time_table.json')
+
 
 def add_log(target, command, details='No Details'):
     timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
