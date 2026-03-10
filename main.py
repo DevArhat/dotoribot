@@ -323,8 +323,9 @@ def build_bot(logger_func):
             
             # 봇 루프를 사용해 Threadsafe하게 비동기 메시지 전송
             coro = next_song['ctx'].send(f"**{next_song['title']}**\n🎶 이어서 부를게요")
-            import asyncio
             asyncio.run_coroutine_threadsafe(coro, ctx.bot.loop)
+        else:
+            asyncio.run_coroutine_threadsafe(start_inactivity_timer(ctx, voice_client), ctx.bot.loop)
 
     @bot.hybrid_command(name="노래", aliases=["음악", "풍악", "재생", "리듬"], description="유튜브 URL을 주면 도토리가 노래를 해요")
     @app_commands.describe(
@@ -367,7 +368,11 @@ def build_bot(logger_func):
 
             if ctx.guild.id not in music_queues:
                 music_queues[ctx.guild.id] = []
-
+                
+            if ctx.guild.id in inactive_timers:
+                inactive_timers[ctx.guild.id].cancel()
+                del inactive_timers[ctx.guild.id]
+            
             # 4. 이미 재생 중이거나 일시정지 상태인 경우 대기열에 추가
             if voice_client.is_playing() or voice_client.is_paused():
                 music_queues[ctx.guild.id].append(song_info)
@@ -421,6 +426,7 @@ def build_bot(logger_func):
                 voice_client.stop()
                 await ctx.send("## ... (조용도토리)")
             else:
+                await start_inactivity_timer(ctx, voice_client)
                 await ctx.send("노래를 다 까먹었어요!")
         else:
             await ctx.send("지금 연결되어 있지 않아요!")
