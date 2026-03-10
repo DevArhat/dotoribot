@@ -3,12 +3,12 @@
 
 import random
 import os
-import json
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
+import asyncio
 
 from logic import *
 
@@ -27,6 +27,7 @@ def build_bot(logger_func):
     bot = DotoriBot(logger_func)
     sc = SpaceController()
     st = StockInfo()
+    rd = RhythmDotori()
 
 
     TIME_TABLE = load_time_table()
@@ -74,14 +75,14 @@ def build_bot(logger_func):
 /주식 [회사명 or 티커 번호]
 ㄴ 주가 보기 (KOSPI만 지원, ETF도 몇개 됨)
 
+/노래 [유튜브 주소]
+ㄴ 노래 틀기 (검색어도 되는데 부정확해서 URL 추천)
+
 # 기타 잡다한 명령어
 !안녕   : 인사하기
 !뒤집기 [문구] : 입력한 문구를 거꾸로 뒤집어서 출력
 !빠직   : 앵그리코코 출력
 /에이메스 : 에이메스 이미지 랜덤 출력
-
-# 구현 도전 중
-/시간표 : 내가 가는 레이드 시간 보여주기
 ```"""
         await ctx.send(help_text, ephemeral=True)
 
@@ -204,54 +205,54 @@ def build_bot(logger_func):
         # interaction.response.send_message를 통해 답장을 보냅니다.
         await interaction.response.send_message(response_text)
         
-    @bot.hybrid_command(name="refresh_time_table", description="시간표 갱신하기")
-    @app_commands.describe(
-        data="시간표 정리 JSON"
-    )
-    async def refresh_time_table_command(ctx, data: str):
-        try:
-            json_data = json.loads(data)
-            TIME_TABLE.update(json_data)
-            refresh_time_table(json_data)
-            sc.replace_space(data)
-            bot.add_log(ctx, "/시간표갱신", f"성공 // 입력 데이터: {data}")
-            await ctx.send("시간표가 성공적으로 갱신되었습니다.", ephemeral=True)
-        except json.JSONDecodeError:
-            sc.remove_space(data)
-            bot.add_log(ctx, "/시간표갱신", f"실패 // 입력 데이터: {data}")
-            await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.", ephemeral=True)
+    # @bot.hybrid_command(name="refresh_time_table", description="시간표 갱신하기")
+    # @app_commands.describe(
+    #     data="시간표 정리 JSON"
+    # )
+    # async def refresh_time_table_command(ctx, data: str):
+    #     try:
+    #         json_data = json.loads(data)
+    #         TIME_TABLE.update(json_data)
+    #         refresh_time_table(json_data)
+    #         sc.replace_space(data)
+    #         bot.add_log(ctx, "/시간표갱신", f"성공 // 입력 데이터: {data}")
+    #         await ctx.send("시간표가 성공적으로 갱신되었습니다.", ephemeral=True)
+    #     except json.JSONDecodeError:
+    #         sc.remove_space(data)
+    #         bot.add_log(ctx, "/시간표갱신", f"실패 // 입력 데이터: {data}")
+    #         await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.", ephemeral=True)
             
-    @bot.hybrid_command(name="시간표", description="내가 갈 레이드, 요일, 시간")
-    async def get_time_table(ctx):
-        user_id = str(ctx.author.id)
-        if user_id in TIME_TABLE:
-            user_info = TIME_TABLE[user_id]
-            response_text = f"<@{user_id}> 의 레이드 시간표입니다:\n```markdown\n"
-            for raid in user_info:
-                response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-            response_text += "```"
-            bot.add_log(ctx, "/시간표조회", f"성공 // 사용자 ID: {user_id}")
-            await ctx.send(response_text, ephemeral=True)
-        else:
-            bot.add_log(ctx, "/시간표조회", f"실패 // 사용자 ID: {user_id} (정보 없음)")
-            await ctx.send("시간표 정보가 없습니다 ㅠㅠ", ephemeral=True)
+    # @bot.hybrid_command(name="시간표", description="내가 갈 레이드, 요일, 시간")
+    # async def get_time_table(ctx):
+    #     user_id = str(ctx.author.id)
+    #     if user_id in TIME_TABLE:
+    #         user_info = TIME_TABLE[user_id]
+    #         response_text = f"<@{user_id}> 의 레이드 시간표입니다:\n```markdown\n"
+    #         for raid in user_info:
+    #             response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
+    #         response_text += "```"
+    #         bot.add_log(ctx, "/시간표조회", f"성공 // 사용자 ID: {user_id}")
+    #         await ctx.send(response_text, ephemeral=True)
+    #     else:
+    #         bot.add_log(ctx, "/시간표조회", f"실패 // 사용자 ID: {user_id} (정보 없음)")
+    #         await ctx.send("시간표 정보가 없습니다 ㅠㅠ", ephemeral=True)
 
-    @bot.hybrid_command(name="전체시간표", description="저장되어 있는 전체 시간표 보기")
-    async def get_everyone_time_table(ctx):
-        bot.add_log(ctx, "/전체시간표")
-        final_msg = ''
-        for user_id, raid_list in TIME_TABLE.items():
-            user_obj = await bot.fetch_user(int(user_id))
-            nick = user_obj.display_name
+    # @bot.hybrid_command(name="전체시간표", description="저장되어 있는 전체 시간표 보기")
+    # async def get_everyone_time_table(ctx):
+    #     bot.add_log(ctx, "/전체시간표")
+    #     final_msg = ''
+    #     for user_id, raid_list in TIME_TABLE.items():
+    #         user_obj = await bot.fetch_user(int(user_id))
+    #         nick = user_obj.display_name
 
-            response_text = f"**{nick}** 의 레이드 시간표입니다:\n```markdown\n"
-            for raid in raid_list:
-                response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-            response_text += "```\n"
+    #         response_text = f"**{nick}** 의 레이드 시간표입니다:\n```markdown\n"
+    #         for raid in raid_list:
+    #             response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
+    #         response_text += "```\n"
             
-            final_msg += response_text
+    #         final_msg += response_text
             
-        await ctx.send(final_msg, ephemeral=True)
+    #     await ctx.send(final_msg, ephemeral=True)
         
         
     @bot.tree.command(name="뽑기", description="뽑기 시뮬레이터")
@@ -280,6 +281,150 @@ def build_bot(logger_func):
         else:
             bot.add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
         await ctx.send(data, ephemeral=set_ephemeral)
+    
+
+    music_queues = {}
+    inactive_timers = {}
+    default_bot_volume=0.15
+
+    async def start_inactivity_timer(ctx, voice_client):
+        """5분(300초) 대기 후 재생 중이 아니면 음성 채널에서 나가는 타이머"""
+        # 기존에 돌고 있는 타이머가 있다면 취소
+        if ctx.guild.id in inactive_timers:
+            inactive_timers[ctx.guild.id].cancel()
+
+        async def timer():
+            try:
+                await asyncio.sleep(300)  # 300초 (5분) 대기
+                # 5분이 지났는데도 봇이 채널에 있고, 재생/일시정지 중이 아니라면 퇴장
+                if voice_client.is_connected() and not voice_client.is_playing() and not voice_client.is_paused():
+                    await voice_client.disconnect()
+                    await ctx.send("나 나간다! 🐿️💨")
+            except asyncio.CancelledError:
+                # 누군가 5분 안에 새 노래를 틀어서 타이머가 취소된 경우
+                pass
+
+        # 타이머를 백그라운드 태스크로 실행하고 딕셔너리에 저장
+        task = ctx.bot.loop.create_task(timer())
+        inactive_timers[ctx.guild.id] = task
+
+    def play_next(error, ctx, voice_client):
+        if error:
+            print(f"Player error: {error}")
+        
+        # 큐에 남은 곡이 있다면 다음 곡 재생
+        if ctx.guild.id in music_queues and len(music_queues[ctx.guild.id]) > 0:
+            next_song = music_queues[ctx.guild.id].pop(0)
+            
+            audio_source = discord.FFmpegPCMAudio(next_song['url'], **next_song['ffmpeg_options'])
+            volume_transformer = discord.PCMVolumeTransformer(audio_source, volume=0.15) # 기본 볼륨 설정
+            
+            voice_client.play(volume_transformer, after=lambda e: play_next(e, ctx, voice_client))
+            
+            # 봇 루프를 사용해 Threadsafe하게 비동기 메시지 전송
+            coro = next_song['ctx'].send(f"**{next_song['title']}**\n🎶 이어서 부를게요")
+            import asyncio
+            asyncio.run_coroutine_threadsafe(coro, ctx.bot.loop)
+
+    @bot.hybrid_command(name="노래", aliases=["음악", "풍악", "재생", "리듬"], description="유튜브 URL을 주면 도토리가 노래를 해요")
+    @app_commands.describe(
+        url="유튜브 URL. 검색어도 되는데 검색결과가 부정확할 때가 있어요"
+    )
+    async def play_music(ctx, url: str):
+        await ctx.defer()
+        
+        if not ctx.author.voice:
+            await ctx.send("어느 채널로 가야되는지 모르겠어! 😱")
+            return
+        channel = ctx.author.voice.channel
+        voice_client = ctx.voice_client
+
+        if voice_client is None:
+            voice_client = await channel.connect()
+        else:
+            await voice_client.move_to(channel)
+
+        msg = await ctx.send("노래 외우는 중.. 잠시만 기다려주세요...")
+
+        # 3. yt-dlp로 스트리밍 URL 추출 (비동기 처리로 봇 멈춤 방지)
+        try:
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(None, lambda: rd.ytdl.extract_info(url, download=False))
+            
+            if 'entries' in data:
+                data = data['entries'][0]
+                
+            stream_url = data['url']
+            title = data['title']
+            
+            # 곡 정보를 딕셔너리로 저장
+            song_info = {
+                'url': stream_url, 
+                'title': title, 
+                'ctx': ctx, 
+                'ffmpeg_options': rd.ffmpeg_options
+            }
+
+            if ctx.guild.id not in music_queues:
+                music_queues[ctx.guild.id] = []
+
+            # 4. 이미 재생 중이거나 일시정지 상태인 경우 대기열에 추가
+            if voice_client.is_playing() or voice_client.is_paused():
+                music_queues[ctx.guild.id].append(song_info)
+                await msg.edit(content=f"""**{title}**
+📝 대기열에 추가했어요 """)
+            else:
+                # 볼륨 조절을 위해 PCMVolumeTransformer 사용 (기본값 0.5 = 50%)
+                default_volume = 0.15
+                audio_source = discord.FFmpegPCMAudio(stream_url, **rd.ffmpeg_options)
+                volume_transformer = discord.PCMVolumeTransformer(audio_source, volume=default_volume)
+                
+                # after 콜백을 연결하여 현재 곡이 끝나면 play_next 함수가 실행되도록 함
+                voice_client.play(volume_transformer, after=lambda e: play_next(e, ctx, voice_client))
+                
+                logger_func(ctx, "/노래", f"input: {url}, title: {title}, url: {stream_url}")
+                await msg.edit(content=f"""**{title}**
+🎶 오케이! 한번 불러볼게요.""")
+            
+        except Exception as e:
+            logger_func(ctx, "/노래", f"input: {url}, error: {e}")
+            await msg.edit(content="노래를 못찾겠어! 😱")
+
+    @bot.hybrid_command(name="목록", aliases=["대기열", "큐", "queue"], description="현재 대기 중인 노래 목록")
+    async def show_queue(ctx):
+        if ctx.guild.id not in music_queues or not music_queues[ctx.guild.id]:
+            await ctx.send("신청곡 기다리는 중 🎵")
+            return
+        
+        queue_list = music_queues[ctx.guild.id]
+        queue_text = "📜 **현재 대기열** 📜\n"
+        for i, song in enumerate(queue_list, 1):
+            queue_text += f"**{i}.** `{song['title']}`\n"
+        
+        await ctx.send(queue_text)
+
+    @bot.hybrid_command(name="스킵", aliases=["넘겨", "skip", "다음"], description="스킵")
+    async def skip_music(ctx):
+        voice_client = ctx.voice_client
+        if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
+            voice_client.stop()
+            await ctx.send("알았어요. 다음 곡 부를게!")
+        else:
+            await ctx.send("지금 재생 중인 노래가 없어! 🤔")
+            
+    @bot.hybrid_command(name="정지", aliases=["그만", "멈춰", "중지"], description="재생목록 비우기")
+    async def clear_queue(ctx):
+        voice_client = ctx.voice_client
+        if voice_client:
+            music_queues[ctx.guild.id] = []
+            if voice_client.is_playing() or voice_client.is_paused():
+                voice_client.stop()
+                await ctx.send("## ... (조용도토리)")
+            else:
+                await ctx.send("노래를 다 까먹었어요!")
+        else:
+            await ctx.send("지금 연결되어 있지 않아요!")
+            
         
         
 
@@ -297,7 +442,31 @@ def build_bot(logger_func):
         print(f"오류 발생 함수: {command_name}")
         print(f"오류 타입: {error_type}")
         
+    @bot.event
+    async def on_voice_state_update(member, before, after):
+        """음성 채널에 봇만 남으면 대기열을 비우고 퇴장"""
+        voice_client = member.guild.voice_client
+        
+        if not voice_client:
+            return
+            
+        if before.channel is not None and after.channel != before.channel:
+            if before.channel.id == voice_client.channel.id:
+                real_members = [m for m in voice_client.channel.members if not m.bot]
+                
+                if len(real_members) == 0:
+                    if member.guild.id in music_queues:
+                        music_queues[member.guild.id] = []
+                    
+                    if member.guild.id in inactive_timers:
+                        inactive_timers[member.guild.id].cancel()
+                        del inactive_timers[member.guild.id]
+                    
+                    await voice_client.disconnect()
+        
     return bot
+
+
 
 def bot_run(token, logger_func):
     bot = build_bot(logger_func)
