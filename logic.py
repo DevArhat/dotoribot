@@ -4,6 +4,7 @@ import os
 import json
 import re
 import FinanceDataReader as fdr
+import yt_dlp, ffmpeg
 
 import aiohttp
 
@@ -88,6 +89,30 @@ class LostArkGuardian:
                 f"{next_start_str} ~ {next_end_str}",
                 f"{next_guardian}", f"{next_card}")
         
+        
+class RhythmDotori:
+    # e2-micro 환경을 위해 리소스 사용 최소화
+    ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0'
+}
+
+# 네트워크 스트림 불안정 시 재연결 옵션
+    ffmpeg_options = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn'
+}
+    def __init__(self):
+        self.ytdl = yt_dlp.YoutubeDL(self.ytdl_format_options) # type: ignore
 
 class StockInfo:
     with open(KOSPI_TICKER_PATH, 'r', encoding='utf-8') as f:
