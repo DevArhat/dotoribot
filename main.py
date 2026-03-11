@@ -64,7 +64,7 @@ def build_bot(logger_func):
 
 # 특수 명령어 (입력 인수 필요)
 /쌀 [가격] [인원수]
-ㄴ 최적입찰가 계산기 (공평분배 기준)
+ㄴ 최적입찰가 계산기 (공평분배 기준) 인원수는 비울 수 있음 (기본값 8인컨텐츠)
 
 /가디언예측 [년] [월] [일]
 ㄴ 특정 날짜 가디언 예측하기
@@ -72,17 +72,19 @@ def build_bot(logger_func):
 /뽑기 [게임명] [돌파]
 ㄴ 뽑기 시뮬레이터 (게임명 잘못 쓰면 붕스가 기본값됨)
 
-/주식 [회사명 or 티커 번호]
-ㄴ 주가 보기 (KOSPI만 지원, ETF도 몇개 됨)
+/주식 [티커 번호 or 회사명]
+ㄴ 주가 보기 (KOSPI만 지원, ETF도 몇개 됨, 티커번호 사용 권장)
 
 /노래 [유튜브 주소]
 ㄴ 노래 틀기 (검색어도 되는데 부정확해서 URL 추천)
 
 # 기타 잡다한 명령어
-!안녕   : 인사하기
+!안녕 : 인사하기
+!빠직 : 앵그리코코 출력
+/에이메스 : 에이메스 이미지 4종 중 1개 랜덤 출력
+/캡틴잭 : 그긴거 출력
+/홀짝 : 홀 or 짝 출력
 !뒤집기 [문구] : 입력한 문구를 거꾸로 뒤집어서 출력
-!빠직   : 앵그리코코 출력
-/에이메스 : 에이메스 이미지 랜덤 출력
 ```"""
         await ctx.send(help_text, ephemeral=True)
 
@@ -92,8 +94,9 @@ def build_bot(logger_func):
         bot.add_log(ctx, "!안녕")
         sticker = discord.Object(id=1247156880124543059)
         await ctx.send(" ", stickers=[sticker])
+        
+    
 
-    # !뒤집기 [문구내용] 명령어
     @bot.hybrid_command(name="뒤집기")
     async def reverse_text(ctx, *, text: str):
         # 파이썬의 슬라이싱을 이용하여 문자열을 거꾸로 뒤집습니다.
@@ -155,14 +158,24 @@ def build_bot(logger_func):
         embed.set_image(url=image_url)
         await ctx.send(embed=embed)
 
+    @bot.hybrid_command(name="캡틴잭", description="캡틴잭 그긴거")
+    async def send_captain_jack(ctx):
+        try:
+            with open(os.path.join(BASE_DIR, 'captain_jack.txt'), 'r', encoding='utf-8') as f:
+                captain_jack = f.read()
+            bot.add_log(ctx, "/캡틴잭")
+        except FileNotFoundError:
+            captain_jack = "이런! 캡틴잭이 제 저장장치를 부숴버렸어요!"
+            bot.add_log(ctx, "/캡틴잭", "[오류] FileNotFoundError")
+            
+        await ctx.send(captain_jack)
 
     @bot.hybrid_command(name="이번주가디언", description="이번주 가디언 정보")
     async def send_weekly_guardian_info(ctx):
         bot.add_log(ctx, "/이번주가디언")
         g = LostArkGuardian().get_lostark_weekly_info()
         
-        msg = (f"""# {g[1]} ({g[2]})
-    {g[0]}""")
+        msg = (f"# {g[1]} ({g[2]})\n{g[0]}")
         await ctx.send(msg)
 
     @bot.hybrid_command(name="다음주가디언", description="다음주 가디언 정보")
@@ -170,8 +183,7 @@ def build_bot(logger_func):
         bot.add_log(ctx, "/다음주가디언")
         g = LostArkGuardian().get_lostark_weekly_info()
         
-        msg = (f"""# {g[4]} ({g[5]})
-    {g[3]}""")
+        msg = (f"# {g[4]} ({g[5]})\n{g[3]}")
         await ctx.send(msg)
 
     @bot.tree.command(name="가디언예측", description="특정 날짜 가디언 예측하기")
@@ -193,68 +205,34 @@ def build_bot(logger_func):
     # 스페이스바를 눌렀을 때 뜰 입력칸(파라미터)에 대한 설명입니다.
     @app_commands.describe(
         price="경매템 가격",
-        dotoris="몇인팟 컨텐츠임?"
+        dotoris="몇인팟 컨텐츠임? (비워두면 8인)"
     )
-    async def calculate(interaction: discord.Interaction, price: int, dotoris: int):
-        response_text = calc_logic(price, dotoris)[0]
-        response_tuple = calc_logic(price, dotoris)[1]
+    async def calculate(interaction: discord.Interaction, price: int, dotoris: int = 8):
+        logic_response = calc_logic(price, dotoris)
         
-        bot.add_log(interaction,
-                "/쌀",
-                f"가격: {price}, 인원수: {dotoris}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
-        # interaction.response.send_message를 통해 답장을 보냅니다.
-        await interaction.response.send_message(response_text)
+        response_text = logic_response[0]
+        response_tuple = logic_response[1]
         
-    # @bot.hybrid_command(name="refresh_time_table", description="시간표 갱신하기")
-    # @app_commands.describe(
-    #     data="시간표 정리 JSON"
-    # )
-    # async def refresh_time_table_command(ctx, data: str):
-    #     try:
-    #         json_data = json.loads(data)
-    #         TIME_TABLE.update(json_data)
-    #         refresh_time_table(json_data)
-    #         sc.replace_space(data)
-    #         bot.add_log(ctx, "/시간표갱신", f"성공 // 입력 데이터: {data}")
-    #         await ctx.send("시간표가 성공적으로 갱신되었습니다.", ephemeral=True)
-    #     except json.JSONDecodeError:
-    #         sc.remove_space(data)
-    #         bot.add_log(ctx, "/시간표갱신", f"실패 // 입력 데이터: {data}")
-    #         await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.", ephemeral=True)
-            
-    # @bot.hybrid_command(name="시간표", description="내가 갈 레이드, 요일, 시간")
-    # async def get_time_table(ctx):
-    #     user_id = str(ctx.author.id)
-    #     if user_id in TIME_TABLE:
-    #         user_info = TIME_TABLE[user_id]
-    #         response_text = f"<@{user_id}> 의 레이드 시간표입니다:\n```markdown\n"
-    #         for raid in user_info:
-    #             response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-    #         response_text += "```"
-    #         bot.add_log(ctx, "/시간표조회", f"성공 // 사용자 ID: {user_id}")
-    #         await ctx.send(response_text, ephemeral=True)
-    #     else:
-    #         bot.add_log(ctx, "/시간표조회", f"실패 // 사용자 ID: {user_id} (정보 없음)")
-    #         await ctx.send("시간표 정보가 없습니다 ㅠㅠ", ephemeral=True)
+        if type(response_tuple) == tuple:
+            bot.add_log(interaction,
+                    "/쌀",
+                    f"가격: {price}, 인원수: {dotoris}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
+            # interaction.response.send_message를 통해 답장을 보냅니다.
+            await interaction.response.send_message(response_text)
+        else:
+            bot.add_log(interaction,
+                        "/쌀",
+                        f"가격: {price}, 인원수: {dotoris}, 응답: {logic_response}"
+                        )
+            await interaction.response.send_message(logic_response)
+      
+    @bot.hybrid_command(name="홀짝", description="홀, 짝 중에 하나 띄워줌")
+    async def odd_or_even(ctx):
+        result = random.choice(["홀", "짝"])
+        bot.add_log(ctx, "/홀짝", f"결과: {result}")
+        await ctx.send(f"# {result}")
+        
 
-    # @bot.hybrid_command(name="전체시간표", description="저장되어 있는 전체 시간표 보기")
-    # async def get_everyone_time_table(ctx):
-    #     bot.add_log(ctx, "/전체시간표")
-    #     final_msg = ''
-    #     for user_id, raid_list in TIME_TABLE.items():
-    #         user_obj = await bot.fetch_user(int(user_id))
-    #         nick = user_obj.display_name
-
-    #         response_text = f"**{nick}** 의 레이드 시간표입니다:\n```markdown\n"
-    #         for raid in raid_list:
-    #             response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-    #         response_text += "```\n"
-            
-    #         final_msg += response_text
-            
-    #     await ctx.send(final_msg, ephemeral=True)
-        
-        
     @bot.tree.command(name="뽑기", description="뽑기 시뮬레이터")
     @app_commands.describe(
         game="원신, 붕스, 젠존제, 명조, 엔필",
@@ -272,6 +250,7 @@ def build_bot(logger_func):
         name="회사명 or 티커 번호"
     )
     async def get_stock_price(ctx, name):
+        name = sc.remove_space(name).upper()
         data = st.get_stock_info(name)
         set_ephemeral = False
         if str(os.getenv('ANGRY_KOKO')) in data:
@@ -288,14 +267,13 @@ def build_bot(logger_func):
     default_bot_volume=0.15
 
     async def start_inactivity_timer(ctx, voice_client):
-        """5분(300초) 대기 후 재생 중이 아니면 음성 채널에서 나가는 타이머"""
         # 기존에 돌고 있는 타이머가 있다면 취소
         if ctx.guild.id in inactive_timers:
             inactive_timers[ctx.guild.id].cancel()
 
         async def timer():
             try:
-                await asyncio.sleep(300)  # 300초 (5분) 대기
+                await asyncio.sleep(3)
                 # 5분이 지났는데도 봇이 채널에 있고, 재생/일시정지 중이 아니라면 퇴장
                 if voice_client.is_connected() and not voice_client.is_playing() and not voice_client.is_paused():
                     await voice_client.disconnect()
@@ -355,8 +333,8 @@ def build_bot(logger_func):
             if 'entries' in data:
                 data = data['entries'][0]
                 
-            stream_url = data['url']
-            title = data['title']
+            stream_url = data.get('url')
+            title = data.get('title')
             
             # 곡 정보를 딕셔너리로 저장
             song_info = {
@@ -381,7 +359,7 @@ def build_bot(logger_func):
             else:
                 # 볼륨 조절을 위해 PCMVolumeTransformer 사용 (기본값 0.5 = 50%)
                 default_volume = 0.15
-                audio_source = discord.FFmpegPCMAudio(stream_url, **rd.ffmpeg_options)
+                audio_source = discord.FFmpegPCMAudio(stream_url, **rd.ffmpeg_options) # type: ignore
                 volume_transformer = discord.PCMVolumeTransformer(audio_source, volume=default_volume)
                 
                 # after 콜백을 연결하여 현재 곡이 끝나면 play_next 함수가 실행되도록 함
@@ -441,8 +419,8 @@ def build_bot(logger_func):
         error_type = type(error).__name__
 
         # 1. 모든 함수에 대해 전역 오류 핸들러로 동작
-        await ctx.send("👀 저를부르셨나요? /사용법 을 써보세요. 아니라면? ㅈㅅ합니다.")
-        bot.add_log(ctx, str(error), f"오류 발생 함수: {command_name}, 오류 타입: {error_type}")
+        await ctx.send("👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        bot.add_log(ctx,f"/{command_name}", f"오류 발생 함수: {command_name}, 오류 타입: {error_type}, 오류 내용: {str(error)}")
         
         # 2. 오류가 발생한 함수와 발생 오류 타입을 print
         print(f"오류 발생 함수: {command_name}")
