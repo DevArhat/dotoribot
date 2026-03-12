@@ -1,6 +1,7 @@
 # tmux new -s bot
 # tmux attach -t bot
 
+from logic import StockInfoWithSqlite
 import random
 import os
 
@@ -11,26 +12,32 @@ from dotenv import load_dotenv
 import asyncio
 
 from logic import *
+import game
 
 class DotoriBot(commands.Bot):
-    def __init__(self, logger_func):
+
+    def __init__(self, is_test, logger_func):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix='!', intents=intents)
         self.add_log = logger_func
+        self.angry_koko = os.getenv('ANGRY_KOKO')
+        if is_test:
+            self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID_TEST')))
+        else:
+            self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID')))
         
     async def setup_hook(self):
         await self.tree.sync()  # 슬래시 명령어 동기화
 load_dotenv()
 
-def build_bot(logger_func):        
-    bot = DotoriBot(logger_func)
+def build_bot(is_test, logger_func):        
+    bot = DotoriBot(is_test, logger_func)
     sc = SpaceController()
     st = StockInfo()
     rd = RhythmDotori()
-
-
-    TIME_TABLE = load_time_table()
+    game.init_db()
+        
 
     # 인텐트 설정 (메시지 내용을 읽기 위해 필수)
     intents = discord.Intents.default()
@@ -92,7 +99,7 @@ def build_bot(logger_func):
     @bot.command(name="안녕")
     async def hello(ctx):
         bot.add_log(ctx, "!안녕")
-        sticker = discord.Object(id=1247156880124543059)
+        sticker = discord.Object(id=int(str(os.getenv('DOTORI_HI'))))
         await ctx.send(" ", stickers=[sticker])
         
     
@@ -429,7 +436,10 @@ def build_bot(logger_func):
     @bot.event
     async def on_voice_state_update(member, before, after):
         """음성 채널에 봇만 남으면 대기열을 비우고 퇴장"""
+        if member.bot:
+            return 
         voice_client = member.guild.voice_client
+        dotori_channel = bot.get_channel(bot.CHAT_CHANNEL_ID)
         
         if not voice_client:
             return
@@ -447,11 +457,86 @@ def build_bot(logger_func):
                         del inactive_timers[member.guild.id]
                     
                     await voice_client.disconnect()
+                    if dotori_channel:
+                        await dotori_channel.send("다들 어디간거야... 나도 나갈래 🐿️💦") # type: ignore
+
+    ### 가위바위보 게임 ###
+
+    @bot.hybrid_command(name="돈줘", description="도토리 100,000개를 지급받습니다 (5분 쿨타임)")
+    async def give_money(ctx):
+        user_id = str(ctx.author.id)
+        success, value = game.give_money(user_id)
+
+        if success:
+            bot.add_log(ctx, "/돈줘", f"지급 후 잔액: {value:,}")
+            await ctx.send(f"💰 도토리 100,000개가 지급되었습니다!\n🏦 현재 도토리: **{value:,}개**")
+        else:
+            minutes, seconds = divmod(value, 60)
+            bot.add_log(ctx, "/돈줘", f"쿨타임 중 ({value}초 남음)")
+            await ctx.send(f"{bot.angry_koko} 탕진좀 그만해!\n**{minutes}분 {seconds}초** 후에 줄게요.", ephemeral=True)
+
+    @bot.hybrid_command(name="게임", description="도토리를 걸고 게임을 합니다.")
+    @app_commands.describe(베팅="베팅할 도토리 갯수")
+    async def play_game(ctx, 베팅: int):
+        user_id = str(ctx.author.id)
+        try:
+            result, fluctuation, balance = game.play_game(user_id, 베팅)
+        except ValueError as e:
+            bot.add_log(ctx, "/게임", f"실패: {e}")
+            await ctx.send(f"❌ {e}", ephemeral=True)
+            return
+
+        if result == "win":
+            emoji = "🎉"
+            result_text = f"승리! +{fluctuation:,}개"
+        elif result == "lose":
+            emoji = "😭"
+            result_text = f"패배! {fluctuation:,}개"
+        else:
+            emoji = "🤝"
+            result_text = "무승부! 금액 변동 없음"
+
+        if balance == 0:
+            result_text += "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다..."
+
+        bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}")
+        await ctx.send(f"""## {emoji} {result_text}
+```
+베팅도토리: {베팅:,}개
+현재도토리: {balance:,}개
+```""")
+
+    ### 테스트 중 ###
+
+    st2 = StockInfoWithSqlite()
+    @bot.hybrid_command(name="주식2", description="주가 보기")
+    @app_commands.describe(
+        name="회사명 or 티커 번호"
+    )
+    async def get_stock_price_v2(ctx, name):
+        name = sc.remove_space(name).upper()
+        data = st2.get_stock_info(name)
+        set_ephemeral = False
+        if str(os.getenv('ANGRY_KOKO')) in data:
+            bot.add_log(ctx, "/주식2", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip()}")
+            data = data.split('$')[0].strip()
+            set_ephemeral = True
+        else:
+            bot.add_log(ctx, "/주식2", f"성공 // 입력 데이터: {name}")
+        await ctx.send(data, ephemeral=set_ephemeral)
+
+
         
     return bot
 
 
 
-def bot_run(token, logger_func):
-    bot = build_bot(logger_func)
+def bot_run(is_test, logger_func):
+    if is_test:
+        token = os.getenv('DOTORI_BOT_TOKEN_TEST')
+    else:
+        token = os.getenv('DOTORI_BOT_TOKEN')
+    token = str(token)
+    
+    bot = build_bot(is_test, logger_func)
     bot.run(token)
