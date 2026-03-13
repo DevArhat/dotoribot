@@ -1,7 +1,6 @@
 # tmux new -s bot
 # tmux attach -t bot
 
-from logic import StockInfoWithSqlite
 import random
 import os
 
@@ -342,7 +341,7 @@ def build_bot(is_test, logger_func):
         else:
             await voice_client.move_to(channel)
 
-        msg = await bot_msg(ctx, "노래 외우는 중.. 잠시만 기다려주세요...")
+        msg = await ctx.send("노래 외우는 중.. 잠시만 기다려주세요...")
 
         # 3. yt-dlp로 스트리밍 URL 추출 (비동기 처리로 봇 멈춤 방지)
         try:
