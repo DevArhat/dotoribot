@@ -7,3 +7,4 @@ time_table.json
 !test.py
 test/
 *.db
+temp_codes/

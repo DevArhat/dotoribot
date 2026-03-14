@@ -227,6 +227,51 @@ class StockInfo:
 ```
 """
         return msg
+    
+class Lotto:
+    def get_latest_lotto_drw(self):
+        """
+        로또 1회차(2002-12-07 20:00) 이후로 매주 토요일 20시를 기준으로 
+        현재 시각까지 경과된 주(week) 수를 계산하여 최신 회차를 반환합니다.
+        """
+        # 로또 1회차 추첨 시간 (토요일 20시)
+        first_draw_date = datetime.datetime(2002, 12, 7, 20, 0)
+        current_date = datetime.datetime.now()
+        
+        # 두 날짜 사이의 차이 계산
+        elapsed_time = current_date - first_draw_date
+        
+        # 7일(604800초) 단위로 나누어 현재 회차 계산
+        # 1회차부터 시작하므로 결과값에 +1을 합니다.
+        latest_drw = (elapsed_time.days // 7) + 1
+        
+        return latest_drw
+
+    def get_lotto_numbers(self, drwNo=None):
+        """
+        지정된 회차 혹은 최신 회차의 당첨 번호를 가져옵니다.
+        """
+        # 회차 정보가 인자로 들어오지 않으면 최신 회차를 계산
+        if drwNo is None:
+            drwNo = self.get_latest_lotto_drw()
+            
+        url = f"https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo={drwNo}"
+        
+        try:
+            response = requests.get(url)
+            response.raise_for_status() # HTTP 에러 발생 시 예외 발생
+            data = response.json()
+            
+            if data.get("returnValue") == "success":
+                numbers = [data[f"drwtNo{i}"] for i in range(1, 7)]
+                bonus = data["bnusNo"]
+                return f"[{drwNo}회 당첨번호] {numbers} + 보너스: {bonus} (추첨일: {data['drwNoDate']})"
+            else:
+                # 아직 추첨 전인 회차이거나 잘못된 회차인 경우
+                return f"{drwNo}회차 데이터를 찾을 수 없습니다. (아직 추첨 전일 수 있습니다.)"
+                
+        except Exception as e:
+            return f"오류가 발생했습니다: {e}"
 
 
 # STOCK_DB_PATH = os.path.join(BASE_DIR, 'stock_data.db')
@@ -377,6 +422,56 @@ def calc_logic(price, dotoris):
 입찰가: {result_tuple[1]:,} 골드
 분배금: {result_tuple[2]:,} 골드
 판매금: {result_tuple[3]:,} 골드```""", result_tuple)
+
+def calc_logic_v2(price, dotoris):
+    if dotoris not in [4,8,16]:
+        if dotoris == 44:
+            dotoris = 4
+        elif dotoris == 88:
+            dotoris = 8
+        elif dotoris == 116 or dotoris == 166:
+            dotoris = 16
+        else:
+            return f"{os.getenv('ANGRY_KOKO')} ({dotoris}인 컨텐츠가 어딨어!!)"
+    if price < 50:
+        return f"{os.getenv('ANGRY_KOKO')} ({price} 골드짜리를 왜입찰해!!)"
+
+    real_value = price * 0.95
+    threshold_value = 100000 * dotoris / (dotoris - 1)
+    
+    if real_value <= threshold_value:
+        # 입찰가가 10만 골드 이하
+        optimal_bid = real_value * (dotoris - 1) / dotoris
+    else:
+        # 입찰가가 10만 골드 초과일 때 초과분 5% 수수료 고려 계산식
+        optimal_bid = (real_value * (dotoris - 1) - 5000) / (dotoris - 0.05)
+        
+    optimal_bid = math.ceil(optimal_bid / 1.1)
+    
+    if optimal_bid <= 100000:
+        total_distribution = optimal_bid
+    else:
+        total_distribution = 100000 + (optimal_bid - 100000) * 0.95
+
+    distribution_per_person = math.floor(total_distribution / (dotoris - 1))
+    
+    winner_profit = math.floor(real_value - optimal_bid)
+    
+    result_tuple = (
+        price,
+        optimal_bid,
+        distribution_per_person,
+        winner_profit
+    )
+    return (f"""# {result_tuple[1]}
+```python
+# 설명도토리
+거래소: {result_tuple[0]:,} 골드
+인원수: {dotoris} 명
+입찰가: {result_tuple[1]:,} 골드
+분배금: {result_tuple[2]:,} 골드
+판매금: {result_tuple[3]:,} 골드```""", result_tuple)    
+
 
 def run_vercel(game, dolpa):
 

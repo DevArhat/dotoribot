@@ -56,9 +56,18 @@ def build_bot(is_test, logger_func):
 
     # 응답 메시지 발송 공통 함수
     async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
-        if ctx.interaction:
+        if isinstance(ctx, discord.Interaction):
+            # @bot.tree.command 등에서 Interaction 객체가 직접 들어온 경우
+            if ctx.response.is_done():
+                await ctx.followup.send(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+            else:
+                await ctx.response.send_message(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+        elif ctx.interaction:
+            # hybrid_command를 통해 슬래시 명령어로 들어온 Context인 경우
+            # Context.send는 내부적으로 interaction.response를 처리해줍니다.
             await ctx.send(content=content, embed=embed, stickers=stickers, ephemeral=ephemeral)
         else:
+            # 일반 메시지 명령어(!명령어)로 들어온 Context인 경우
             await ctx.message.reply(content=content, embed=embed, stickers=stickers)
 
 
@@ -221,11 +230,11 @@ def build_bot(is_test, logger_func):
     @bot.tree.command(name="쌀", description="경매 쌀산기")
     # 스페이스바를 눌렀을 때 뜰 입력칸(파라미터)에 대한 설명입니다.
     @app_commands.describe(
-        price="경매템 가격",
-        dotoris="몇인팟 컨텐츠임? (비워두면 8인)"
+        거래소="경매템 가격",
+        컨텐츠인원="몇인팟 컨텐츠임?"
     )
-    async def calculate(interaction: discord.Interaction, price: int, dotoris: int = 8):
-        logic_response = calc_logic(price, dotoris)
+    async def calculate(interaction: discord.Interaction, 거래소: int, 컨텐츠인원: int):
+        logic_response = calc_logic(거래소, 컨텐츠인원)
         
         response_text = logic_response[0]
         response_tuple = logic_response[1]
@@ -233,16 +242,42 @@ def build_bot(is_test, logger_func):
         if type(response_tuple) == tuple:
             bot.add_log(interaction,
                     "/쌀",
-                    f"가격: {price}, 인원수: {dotoris}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
+                    f"가격: {거래소}, 인원수: {컨텐츠인원}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
             # interaction.response.send_message를 통해 답장을 보냅니다.
             await bot_msg(interaction, response_text)
         else:
             bot.add_log(interaction,
                         "/쌀",
-                        f"가격: {price}, 인원수: {dotoris}, 응답: {logic_response}"
+                        f"가격: {거래소}, 인원수: {컨텐츠인원}, 응답: {logic_response}"
                         )
-            await bot_msg(interaction, logic_response)
-      
+            await bot_msg(interaction, logic_response) # type: ignore
+    
+    @bot.hybrid_command(name="선점쌀", description="경매 쌀산기 (선점가)")
+    @app_commands.describe(
+        거래소="경매템 가격",
+        컨텐츠인원="몇인팟 컨텐츠임?"
+    )
+    async def calculate_v2(ctx, 거래소: int, 컨텐츠인원: int):
+        logic_response = calc_logic_v2(거래소, 컨텐츠인원)
+        
+        response_text = logic_response[0]
+        response_tuple = logic_response[1]
+        
+        if type(response_tuple) == tuple:
+            bot.add_log(ctx,
+                    "/쌀",
+                    f"가격: {거래소}, 인원수: {컨텐츠인원}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
+            # interaction.response.send_message를 통해 답장을 보냅니다.
+            await bot_msg(ctx, response_text)
+        else:
+            bot.add_log(ctx,
+                        "/쌀",
+                        f"가격: {거래소}, 인원수: {컨텐츠인원}, 응답: {logic_response}"
+                        )
+            await bot_msg(ctx, logic_response) # type: ignore        
+    
+        
+    
     @bot.hybrid_command(name="홀짝", description="홀, 짝 중에 하나 띄워줌")
     async def odd_or_even(ctx):
         result = random.choice(["홀", "짝"])
@@ -501,14 +536,14 @@ def build_bot(is_test, logger_func):
             emoji = "🎉"
             result_text = f"승리! +{fluctuation:,}개"
         elif result == "lose":
-            emoji = "😭"
+            emoji = "☠️"
             result_text = f"패배! {fluctuation:,}개"
         else:
-            emoji = "🤝"
+            emoji = "🐿️"
             result_text = "무승부! 금액 변동 없음"
 
         if balance == 0:
-            result_text += "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다..."
+            result_text += "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다...😱"
 
         bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}")
         await bot_msg(ctx, f"""## {emoji} {result_text}
@@ -528,15 +563,15 @@ def build_bot(is_test, logger_func):
 
     ### 테스트 중 ###
 
-    @bot.hybrid_command(name="로또", description="님들아 로또 1등되면 뭐할거임?")
+    @bot.hybrid_command(name="로또추천", description="님들아 로또 1등되면 뭐할거임?")
     async def lotto(ctx):
         
         numbers = sorted(random.sample(range(1, 46), 6))
         bonus_number = random.choice([i for i in range(1, 46) if i not in numbers])
         
         embed = discord.Embed(
-            title="🎉 로또 번호 추첨 결과",
-            description="행운의 번호가 나왔어요!",
+            title="🐿️ 로또 번호 생각하는 중...",
+            description="생각햇따!!",
             color=discord.Color.gold()
         )
         
@@ -552,8 +587,23 @@ def build_bot(is_test, logger_func):
             inline=False
         )
         
+        embed.add_field(
+            name="💸 사러가기",
+            value="[동행복권 사이트](https://www.dhlottery.co.kr/main)",
+            inline=False
+        )
+        
         await bot_msg(ctx, embed=embed)
 
+    @bot.hybrid_command(name="최신로또", description="가장 최근 로또 추첨번호를 알려줍니다.")
+    async def latest_lotto(ctx):
+        
+        lt = Lotto()
+        msg = lt.get_lotto_numbers()
+        
+        await bot_msg(ctx, msg)
+        
+    
     # st2 = StockInfoWithSqlite()
     # @bot.hybrid_command(name="주식2", description="주가 보기")
     # @app_commands.describe(
