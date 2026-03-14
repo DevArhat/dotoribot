@@ -6,7 +6,7 @@ import os
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 import asyncio
 
@@ -46,6 +46,7 @@ def build_bot(is_test, logger_func):
     @bot.event
     async def on_ready():
         try:
+            midnight_interest_job.start()
             synced = await bot.tree.sync()
             print(f'{len(synced)}개의 명령어')  # type: ignore
         except Exception as e:
@@ -531,11 +532,15 @@ def build_bot(is_test, logger_func):
             bot.add_log(ctx, "/게임", f"실패: {e}")
             await bot_msg(ctx, f"❌ {e}", ephemeral=True)
             return
+        player_has_item = False
+        if "item_" in result:
+            player_has_item = True
+            
 
-        if result == "win":
+        if "win" in result:
             emoji = "🎉"
             result_text = f"승리! +{fluctuation:,}개"
-        elif result == "lose":
+        elif "lose" in result:
             emoji = "☠️"
             result_text = f"패배! {fluctuation:,}개"
         else:
@@ -545,7 +550,7 @@ def build_bot(is_test, logger_func):
         if balance == 0:
             result_text += "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다...😱"
 
-        bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}")
+        bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}, 아이템보유: {player_has_item}" )
         await bot_msg(ctx, f"""## {emoji} {result_text}
 ```
 베팅도토리: {베팅:,}개
@@ -559,7 +564,49 @@ def build_bot(is_test, logger_func):
         balance = game.get_balance(user_id)
         bot.add_log(ctx, "/내돈", f"잔액: {balance:,}")
         await bot_msg(ctx, f"🏦 현재 도토리: **{balance:,}개**")
+        
+    @bot.hybrid_command(name="내템", description="내가 구매한 아이템 확인")
+    async def my_item(ctx):
+        user_id = str(ctx.author.id)
+        logic_result = game.get_inventory_by_userid(user_id)
+        msg = logic_result[0]
+        items = logic_result[1]
+        bot.add_log(ctx, "/내템", f"아이템: {items}")
+        await bot_msg(ctx, msg)
+        
+        
+    @bot.hybrid_command(name="아이템", description="존재하는 아이템 종류 확인")
+    async def show_items(ctx):
+        items_info_msg = game.show_item()
+        bot.add_log(ctx, "/아이템")
+        await bot_msg(ctx, items_info_msg)
 
+    
+
+    @bot.hybrid_command(name="구매", description="아이템 구매")
+    @app_commands.describe(아이템="사기주사위(승리확률증가), 적금통장(자정마다 이자)")
+    async def buy_item(ctx, 아이템: str):
+        아이템 = sc.remove_space(아이템).lower()
+        if "적금" in 아이템 or "통장" in 아이템:
+            item_key = "high_interest"
+        elif "사기" in 아이템 or "주사위" in 아이템:
+            item_key = "cheat_dice"
+        else:
+            item_key = 아이템 # 잘못된 아이템 코드가 들어가면 로직이 알아서 False를 뱉는다.
+        
+        user_id = str(ctx.author.id)
+        logic_result = game.buy_item(user_id, item_key)
+        purchase_successed = logic_result[0]
+        successed_text = "성공" if purchase_successed else "실패"
+        user_balance = logic_result[1]
+        logic_msg = logic_result[2]
+        
+        msg = f"[구매{successed_text}] " + logic_msg
+        
+        bot.add_log(ctx, "/구매", {successed_text}, f"아이템: {item_key} ({아이템}), 잔액: {user_balance:,}")
+        await bot_msg(ctx, msg)
+        
+    
 
     ### 테스트 중 ###
 
@@ -620,6 +667,11 @@ def build_bot(is_test, logger_func):
     #     else:
     #         bot.add_log(ctx, "/주식2", f"성공 // 입력 데이터: {name}")
     #     await bot_msg(ctx, data, ephemeral=set_ephemeral)
+
+    @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
+    async def midnight_interest_job():
+        count = game.claim_interest_for_all()
+        print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다.")
 
 
         
