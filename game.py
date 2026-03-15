@@ -16,7 +16,22 @@ ITEMS = {
     "cheat_dice": {
         "name": "사기 주사위",
         "price": 1000000,
-        "desc": "게임 플레이 시 승리 확률이 10% 증가하고, 패배 확률이 10% 감소합니다."
+        "desc": "올인만 할 수 있으며, 승리/패배/무승부 확률이 60/25/15 %로 변경됩니다."
+    },
+    "golden_acorn": {
+        "name": "황금 도토리",
+        "price": 1500000,
+        "desc": "승리 시 0.5% 확률로 베팅 금액의 30배를 획득합니다."
+    },
+    "strong_acorn": {
+        "name": "돈줘 강화",
+        "price": 2000000,
+        "desc": "/돈줘 금액이 2배 증가합니다."
+    },
+    "acorn_loan": {
+        "name": "땡겨쓰기",
+        "price": 3000000,
+        "desc": "/돈많이줘 를 사용할 수 있습니다: 15,000,000개/1일"
     }
 }
 
@@ -46,6 +61,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # 이미 컬럼이 존재하면 무시
         
+    # [업데이트] money 테이블에 땡겨쓰기 수령일(last_loan_date) 컬럼 추가 (기존 DB 호환용)
+    try:
+        cursor.execute("ALTER TABLE money ADD COLUMN last_loan_date TEXT")
+    except sqlite3.OperationalError:
+        pass  # 이미 컬럼이 존재하면 무시
+        
     # 2. 기존 game_result 테이블
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS game_result (
@@ -65,6 +86,18 @@ def init_db():
         )
     """)
     
+    # 4. 결투 결과 테이블
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS duel_result (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_a TEXT NOT NULL REFERENCES money(user_id),
+            user_b TEXT NOT NULL REFERENCES money(user_id),
+            bet INTEGER NOT NULL,
+            result TEXT NOT NULL,
+            duel_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -77,9 +110,43 @@ def get_balance(user_id: str) -> int:
     conn.close()
     return row[0] if row else 0
 
+def get_cooldown_info(user_id: str) -> tuple:
+    """
+    돈줘 쿨타임 정보를 반환한다.
+    
+    Returns:
+        (True, None) - 돈줘 가능
+        (False, available_at_kst: datetime) - 쿨타임 중, KST 기준 가능 시각
+    """
+    cooldown_seconds = 300
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT money_grant_at FROM money WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row is None:
+        return (True, None)
+    
+    grant_time = datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+    available_at_utc = grant_time + datetime.timedelta(seconds=cooldown_seconds)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    
+    if now_utc >= available_at_utc:
+        return (True, None)
+    
+    available_at_kst = available_at_utc.astimezone(KST)
+    return (False, available_at_kst)
+
 def give_money(user_id: str) -> tuple:
-    """유저에게 100000원을 지급한다. (5분 쿨타임)"""
+    """유저에게 100000원(강화 시 200000원)을 지급한다. (5분 쿨타임)"""
     amount = 100000
+    is_strong = has_item(user_id, "strong_acorn")
+    if is_strong:
+        amount = 200000
+        
     cooldown_seconds = 300  # 5분
 
     conn = _get_connection()
@@ -96,7 +163,7 @@ def give_money(user_id: str) -> tuple:
         if elapsed < cooldown_seconds:
             remaining = int(cooldown_seconds - elapsed)
             conn.close()
-            return (False, remaining)
+            return (False, remaining, is_strong)
 
     cursor.execute("""
         INSERT INTO money (user_id, current_amount, money_grant_at)
@@ -108,9 +175,69 @@ def give_money(user_id: str) -> tuple:
 
     cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
     balance = cursor.fetchone()[0]
+    
+    # 지급 결과를 game_result 기록
+    cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, amount))
+    
     conn.commit()
     conn.close()
-    return (True, balance)
+    return (True, balance, is_strong)
+
+def give_money_loan(user_id: str) -> tuple:
+    """
+    '땡겨쓰기' 아이템 보유 시 하루 한 번 15,000,000원을 지급한다.
+    
+    Returns:
+        (True, 잔액, 메시지) - 대출 성공
+        (False, 0, 메시지) - 대출 실패 (아이템 미보유 혹은 이미 수령)
+    """
+    if not has_item(user_id, "acorn_loan"):
+        return (False, 0, "땡겨쓰기 아이템이 필요합니다.")
+        
+    amount = 15000000
+    # KST 기준 날짜 구하기
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    now_kst = datetime.datetime.now(KST)
+    today_str = now_kst.strftime("%Y-%m-%d")
+    
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT current_amount, last_loan_date FROM money WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    # 아직 money 테이블에 등록되지 않았다면 먼저 등록
+    if not row:
+        cursor.execute("INSERT INTO money (user_id, current_amount, last_loan_date) VALUES (?, ?, ?)", (user_id, amount, today_str))
+        cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, amount))
+        conn.commit()
+        conn.close()
+        return (True, amount, "대출 성공")
+        
+    current_amount, last_loan_date = row
+    
+    # 오늘 이미 대출을 받았는지 확인
+    if last_loan_date == today_str:
+        conn.close()
+        return (False, 0, "오늘은 이미 땡겨썼습니다! 내일 다시 오세요.")
+        
+    # 대출금 지급 및 지급일 갱신
+    cursor.execute("""
+        UPDATE money 
+        SET current_amount = current_amount + ?, last_loan_date = ? 
+        WHERE user_id = ?
+    """, (amount, today_str, user_id))
+    
+    # 대출 내역을 game_result에 기록
+    cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, amount))
+    
+    cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+    new_balance = cursor.fetchone()[0]
+    
+    conn.commit()
+    conn.close()
+    
+    return (True, new_balance, "대출 성공")
 
 # --- 신규: 아이템 관련 함수 ---
 
@@ -197,9 +324,46 @@ def buy_item(user_id: str, item_id: str) -> tuple:
     
     return (True, new_balance, f"'{ITEMS[item_id]['name']}'을(를) 구매했습니다!")
 
+def sell_item(user_id: str, item_id: str) -> tuple:
+    """
+    유저가 보유 중인 아이템을 판매한다. 구매가의 60%를 환급한다.
+
+    Returns:
+        (True, 잔액, 메시지) - 판매 성공
+        (False, 잔액, 메시지) - 판매 실패 (아이템 미보유 등)
+    """
+    if item_id not in ITEMS:
+        return (False, get_balance(user_id), "존재하지 않는 아이템입니다.")
+
+    if not has_item(user_id, item_id):
+        return (False, get_balance(user_id), f"'{ITEMS[item_id]['name']}'을(를) 보유하고 있지 않습니다.")
+
+    item_price = ITEMS[item_id]["price"]
+    refund = int(item_price * 0.6)
+
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    # 1. 인벤토리에서 아이템 제거
+    cursor.execute("DELETE FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
+    # 2. 잔액 환급
+    cursor.execute(
+        "INSERT INTO money (user_id, current_amount) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET current_amount = current_amount + ?",
+        (user_id, refund, refund)
+    )
+
+    cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+    new_balance = cursor.fetchone()[0]
+
+    conn.commit()
+    conn.close()
+
+    return (True, new_balance, f"'{ITEMS[item_id]['name']}'을(를) **{refund:,}개**에 판매했습니다! (구매가의 60%)")
+
+
 def claim_interest(user_id: str) -> tuple:
     """
-    고금리 상품 아이템 보유 시 일일 이자를 지급한다.
+    적금통장 아이템 보유 시 일일 이자를 지급한다.
     
     Returns:
         (True, 이자금액, 갱신된잔액) - 이자 지급 성공
@@ -208,8 +372,10 @@ def claim_interest(user_id: str) -> tuple:
     if not has_item(user_id, "high_interest"):
         return (False, 0, get_balance(user_id))
         
-    # KST 기준(혹은 서버 시간 기준) 날짜 구하기
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    # KST 기준 날짜 구하기
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    now_kst = datetime.datetime.now(KST)
+    today_str = now_kst.strftime("%Y-%m-%d")
     
     conn = _get_connection()
     cursor = conn.cursor()
@@ -250,13 +416,16 @@ def claim_interest(user_id: str) -> tuple:
 
 def claim_interest_for_all() -> int:
     """
-    '고금리 상품'을 보유한 모든 유저에게 일괄적으로 이자를 지급한다.
+    '적금통장'을 보유한 모든 유저에게 일괄적으로 이자를 지급한다.
     (스케줄러나 봇의 Task Loop에서 매일 자정에 한 번 호출하기 적합)
     
     Returns:
         int: 이자를 지급받은 유저 수
     """
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    # KST 기준 날짜 구하기
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    now_kst = datetime.datetime.now(KST)
+    today_str = now_kst.strftime("%Y-%m-%d")
     
     conn = _get_connection()
     cursor = conn.cursor()
@@ -293,6 +462,111 @@ def claim_interest_for_all() -> int:
     return count
 
 
+def get_ranking(limit: int = 10) -> list:
+    """보유 금액 내림차순으로 유저 목록을 조회한다."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT user_id, current_amount 
+        FROM money 
+        ORDER BY current_amount DESC 
+        LIMIT ?
+    """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def duel(challenger_id: str, opponent_id: str, bet: int) -> tuple:
+    """
+    두 유저 간 결투를 수행한다.
+    45% 도전자 승리, 45% 상대방 승리, 10% 무승부
+    
+    Returns:
+        (result, challenger_balance, opponent_balance)
+        result: "challenger_win" | "opponent_win" | "draw"
+    Raises:
+        ValueError: 잔액 부족 시 (부족한 유저의 user_id를 메시지에 포함)
+    """
+    challenger_balance = get_balance(challenger_id)
+    opponent_balance = get_balance(opponent_id)
+    
+    if challenger_balance < bet:
+        raise ValueError(f"challenger_insufficient")
+    if opponent_balance < bet:
+        raise ValueError(f"opponent_insufficient")
+    
+    roll = random.random()
+    
+    if roll < 0.45:
+        result = "challenger_win"
+        c_change = bet
+        o_change = -bet
+        duel_result_code = "A"
+    elif roll < 0.90:
+        result = "opponent_win"
+        c_change = -bet
+        o_change = bet
+        duel_result_code = "B"
+    else:
+        result = "draw"
+        c_change = 0
+        o_change = 0
+        duel_result_code = "D"
+    
+    conn = _get_connection()
+    cursor = conn.cursor()
+    if c_change != 0:
+        cursor.execute("UPDATE money SET current_amount = current_amount + ? WHERE user_id = ?", (c_change, challenger_id))
+        cursor.execute("UPDATE money SET current_amount = current_amount + ? WHERE user_id = ?", (o_change, opponent_id))
+        cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (challenger_id, c_change))
+        cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (opponent_id, o_change))
+    cursor.execute("INSERT INTO duel_result (user_a, user_b, bet, result) VALUES (?, ?, ?, ?)", (challenger_id, opponent_id, bet, duel_result_code))
+    conn.commit()
+    conn.close()
+    
+    return (result, get_balance(challenger_id), get_balance(opponent_id))
+
+
+def gift(sender_id: str, receiver_id: str, amount: int) -> tuple:
+    """
+    유저가 다른 유저에게 도토리를 선물한다.
+    보내는 사람은 100% 차감, 받는 사람은 수수료 5% 제외 후 95% 지급.
+    
+    Returns:
+        (sender_balance, receiver_balance, actual_received)
+    Raises:
+        ValueError: 잔액 부족 시
+    """
+    sender_balance = get_balance(sender_id)
+    
+    if sender_balance < amount:
+        raise ValueError(f"sender_insufficient")
+        
+    actual_received = int(amount * 0.95)
+    
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    # 송금자 차감
+    cursor.execute("UPDATE money SET current_amount = current_amount - ? WHERE user_id = ?", (amount, sender_id))
+    
+    # 수신자 지급 (없을 수도 있으므로 INSERT OR UPDATE 방식을 사용)
+    cursor.execute("""
+        INSERT INTO money (user_id, current_amount) VALUES (?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET current_amount = current_amount + ?
+    """, (receiver_id, actual_received, actual_received))
+    
+    # 기록 (송금자)
+    cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (sender_id, -amount))
+    # 기록 (수신자)
+    cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (receiver_id, actual_received))
+    
+    conn.commit()
+    conn.close()
+    
+    return (get_balance(sender_id), get_balance(receiver_id), actual_received)
+
+
 # --- 기존 게임 수정: 사기 주사위 적용 ---
 
 def play_game(user_id: str, bet: int) -> tuple:
@@ -309,16 +583,17 @@ def play_game(user_id: str, bet: int) -> tuple:
 
     # [수정] 아이템 보유 여부에 따른 확률 분기
     is_cheating = has_item(user_id, "cheat_dice")
+    has_golden_acorn = has_item(user_id, "golden_acorn")
     roll = random.random()
     
     if is_cheating:
-        # 사기 주사위: 50% 승리, 20% 패배, 30% 무승부
-        if roll < 0.5:
+        # 사기 주사위: 60% 승리, 25% 패배, 15% 무승부
+        if roll < 0.6:
             result = "item_win"
-            fluctuation = bet
-        elif roll < 0.7:
+            fluctuation = current_balance
+        elif roll < 0.85:
             result = "item_lose"
-            fluctuation = -bet
+            fluctuation = -current_balance
         else:
             result = "item_draw"
             fluctuation = 0
@@ -333,6 +608,13 @@ def play_game(user_id: str, bet: int) -> tuple:
         else:
             result = "draw"
             fluctuation = 0
+
+    if "win" in result and has_golden_acorn:
+        jackpot_r = random.random()
+        jackpot_r *= 100
+        if jackpot_r < 0.5:
+            result += "_jackpot"
+            fluctuation *= 30
 
     conn = _get_connection()
     cursor = conn.cursor()
@@ -352,7 +634,7 @@ def play_game(user_id: str, bet: int) -> tuple:
     conn.commit()
     conn.close()
 
-    return (result, fluctuation, balance)
+    return (result, is_cheating, has_golden_acorn, fluctuation, balance)
 
 
 # 스크립트 실행 시 DB 초기화 (수정된 스키마 반영)
