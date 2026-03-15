@@ -76,7 +76,7 @@ def init_db():
         )
     """)
     
-    # 3. [신규] 유저의 아이템 보유를 관리하는 inventory 테이블
+    # 3. 유저의 아이템 보유를 관리하는 inventory 테이블
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS inventory (
             user_id TEXT NOT NULL REFERENCES money(user_id),
@@ -183,6 +183,64 @@ def give_money(user_id: str) -> tuple:
     conn.close()
     return (True, balance, is_strong)
 
+
+
+
+
+
+
+
+
+
+# --- 아이템 관련 함수 ---
+# 사기주사위, 황금도토리는 게임 관련 함수에서 관리
+
+def show_item() -> str:
+    """상점에서 판매 중인 아이템 목록을 마크다운 문자열로 반환한다."""
+    item_info = "## 아이템 목록\n```markdown\n"
+    for _, item_data in ITEMS.items():
+        item_info += f"# {item_data['name']}\n"
+        item_info += f"가격: {item_data['price']:,} 도토리\n"
+        item_info += f"설명: {item_data['desc']}\n\n"
+    item_info += "```"
+    return item_info
+
+def get_inventory_by_userid(user_id: str) -> tuple:
+    """유저의 인벤토리 상태를 조회하여 문자열로 반환한다."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT item_id, purchased_at FROM inventory WHERE user_id = ?", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return "현재 보유 중인 아이템이 없습니다.", []
+    inventory_info = f"## 내 가방\n```markdown\n"
+    items_list = []
+    for row in rows:
+        item_id = row[0]
+        
+        purchased_at_utc = datetime.datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S")
+        purchased_at_kst = purchased_at_utc + datetime.timedelta(hours=9)
+        purchased_at = purchased_at_kst.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # ITEMS 딕셔너리에서 아이템 이름 가져오기 (만약 삭제된 아이템이라면 알 수 없는 아이템으로 표기)
+        item_name = ITEMS.get(item_id, {}).get("name", "알 수 없는 아이템")
+        items_list.append(item_id)
+        inventory_info += f"- {item_name} (구매일시: {purchased_at})\n"
+        
+    inventory_info += "```"
+    return inventory_info, items_list        
+
+def has_item(user_id: str, item_id: str) -> bool:
+    """유저가 특정 아이템을 보유하고 있는지 확인한다."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
+    result = cursor.fetchone()
+    conn.close()
+    return bool(result)
+
 def give_money_loan(user_id: str) -> tuple:
     """
     '땡겨쓰기' 아이템 보유 시 하루 한 번 15,000,000원을 지급한다.
@@ -239,54 +297,6 @@ def give_money_loan(user_id: str) -> tuple:
     
     return (True, new_balance, "대출 성공")
 
-# --- 신규: 아이템 관련 함수 ---
-
-def show_item() -> str:
-    """상점에서 판매 중인 아이템 목록을 마크다운 문자열로 반환한다."""
-    item_info = "## 아이템 목록\n```markdown\n"
-    for _, item_data in ITEMS.items():
-        item_info += f"# {item_data['name']}\n"
-        item_info += f"가격: {item_data['price']:,} 도토리\n"
-        item_info += f"설명: {item_data['desc']}\n\n"
-    item_info += "```"
-    return item_info
-
-def get_inventory_by_userid(user_id: str) -> tuple:
-    """유저의 인벤토리 상태를 조회하여 문자열로 반환한다."""
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT item_id, purchased_at FROM inventory WHERE user_id = ?", (user_id,))
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        return "현재 보유 중인 아이템이 없습니다.", []
-    inventory_info = f"## 내 가방\n```markdown\n"
-    items_list = []
-    for row in rows:
-        item_id = row[0]
-        
-        purchased_at_utc = datetime.datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S")
-        purchased_at_kst = purchased_at_utc + datetime.timedelta(hours=9)
-        purchased_at = purchased_at_kst.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # ITEMS 딕셔너리에서 아이템 이름 가져오기 (만약 삭제된 아이템이라면 알 수 없는 아이템으로 표기)
-        item_name = ITEMS.get(item_id, {}).get("name", "알 수 없는 아이템")
-        items_list.append(item_id)
-        inventory_info += f"- {item_name} (구매일시: {purchased_at})\n"
-        
-    inventory_info += "```"
-    return inventory_info, items_list
-        
-
-def has_item(user_id: str, item_id: str) -> bool:
-    """유저가 특정 아이템을 보유하고 있는지 확인한다."""
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
-    result = cursor.fetchone()
-    conn.close()
-    return bool(result)
 
 def buy_item(user_id: str, item_id: str) -> tuple:
     """
@@ -462,6 +472,15 @@ def claim_interest_for_all() -> int:
     return count
 
 
+
+
+
+
+
+
+
+# --- 도토리게임 관련 기능 ---
+
 def get_ranking(limit: int = 10) -> list:
     """보유 금액 내림차순으로 유저 목록을 조회한다."""
     conn = _get_connection()
@@ -567,7 +586,7 @@ def gift(sender_id: str, receiver_id: str, amount: int) -> tuple:
     return (get_balance(sender_id), get_balance(receiver_id), actual_received)
 
 
-# --- 기존 게임 수정: 사기 주사위 적용 ---
+
 
 def play_game(user_id: str, bet: int) -> tuple:
     """
@@ -575,46 +594,36 @@ def play_game(user_id: str, bet: int) -> tuple:
     '사기 주사위' 아이템 보유 시 확률이 보정된다.
     """
     if bet <= 0:
-        raise ValueError("베팅 금액은 0보다 커야 합니다.")
+        raise ValueError("베팅할 도토리는 어딨어?")
 
     current_balance = get_balance(user_id)
     if current_balance < bet:
-        raise ValueError(f"잔액이 부족합니다. (현재 잔액: {current_balance:,}원)")
+        raise ValueError(f"도토리가 모자라! (현재 잔액: {current_balance:,}원)")
 
     # [수정] 아이템 보유 여부에 따른 확률 분기
-    is_cheating = has_item(user_id, "cheat_dice")
+    has_cheat_dice = has_item(user_id, "cheat_dice")
     has_golden_acorn = has_item(user_id, "golden_acorn")
-    roll = random.random()
-    
-    if is_cheating:
-        # 사기 주사위: 60% 승리, 25% 패배, 15% 무승부
-        if roll < 0.6:
-            result = "item_win"
+    fluctuation = 0
+
+    result = _game_roll(has_cheat_dice, has_golden_acorn)
+
+    if "item_" in result:
+        if "win" in result:
             fluctuation = current_balance
-        elif roll < 0.85:
-            result = "item_lose"
+        elif "lose" in result:
             fluctuation = -current_balance
         else:
-            result = "item_draw"
             fluctuation = 0
     else:
-        # 기본 확률: 40% 승리, 40% 패배, 20% 무승부
-        if roll < 0.4:
-            result = "win"
+        if "win" in result:
             fluctuation = bet
-        elif roll < 0.8:
-            result = "lose"
+        elif "lose" in result:
             fluctuation = -bet
         else:
-            result = "draw"
             fluctuation = 0
 
-    if "win" in result and has_golden_acorn:
-        jackpot_r = random.random()
-        jackpot_r *= 100
-        if jackpot_r < 0.5:
-            result += "_jackpot"
-            fluctuation *= 30
+    if "win_jackpot" in result:
+        fluctuation *= 30
 
     conn = _get_connection()
     cursor = conn.cursor()
@@ -634,8 +643,112 @@ def play_game(user_id: str, bet: int) -> tuple:
     conn.commit()
     conn.close()
 
-    return (result, is_cheating, has_golden_acorn, fluctuation, balance)
+    return (result, has_cheat_dice, has_golden_acorn, fluctuation, balance)
 
+def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
+    """
+    게임을 여러 번 반복 수행한다.
+
+    Returns:
+        (total_fluctuation, actual_rounds, wins, losses, draws, jackpot_count,
+         has_cheat_dice, has_golden_acorn, balance)
+    """
+    if bet <= 0:
+        raise ValueError("베팅할 도토리는 어딨어?")
+    if repeat <= 0:
+        raise ValueError("한번은 해야지!!")
+    if repeat > 100:
+        raise ValueError("그렇게 많이는 못해! 중간에 까먹어!")
+
+    current_balance = get_balance(user_id)
+    if current_balance < bet:
+        raise ValueError(f"도토리가 모자라! (현재 잔액: {current_balance:,}원)")
+
+    has_cheat_dice = has_item(user_id, "cheat_dice")
+    has_golden_acorn = has_item(user_id, "golden_acorn")
+
+    total_fluctuation = 0
+    wins = 0
+    losses = 0
+    draws = 0
+    jackpot_count = 0
+    actual_rounds = 0
+
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    for _ in range(repeat):
+        # 사기 주사위가 아닌 경우 잔액이 베팅금 미만이면 조기 종료
+        if not has_cheat_dice and current_balance < bet:
+            break
+        # 사기 주사위인 경우 잔액이 0이면 조기 종료
+        if has_cheat_dice and current_balance <= 0:
+            break
+
+        actual_rounds += 1
+        result = _game_roll(has_cheat_dice, has_golden_acorn)
+
+        if "item_" in result:
+            if "win" in result:
+                fluctuation = current_balance
+            elif "lose" in result:
+                fluctuation = -current_balance
+            else:
+                fluctuation = 0
+        else:
+            if "win" in result:
+                fluctuation = bet
+            elif "lose" in result:
+                fluctuation = -bet
+            else:
+                fluctuation = 0
+
+        if "win_jackpot" in result:
+            fluctuation *= 30
+            jackpot_count += 1
+
+        if "win" in result:
+            wins += 1
+        elif "lose" in result:
+            losses += 1
+        else:
+            draws += 1
+
+        total_fluctuation += fluctuation
+        current_balance += fluctuation
+
+        cursor.execute("""
+            INSERT INTO money (user_id, current_amount) VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET current_amount = current_amount + ?
+        """, (user_id, fluctuation, fluctuation))
+
+        cursor.execute("""
+            INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)
+        """, (user_id, fluctuation))
+
+    cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
+
+    conn.commit()
+    conn.close()
+
+    return (total_fluctuation, actual_rounds, wins, losses, draws, jackpot_count,
+            has_cheat_dice, has_golden_acorn, balance)
+
+def _game_roll(has_cheat_dice: bool, has_golden_acorn: bool):
+    if has_cheat_dice:
+        results, weights = ['item_win', 'item_lose', 'item_draw'], [60, 25, 15]
+    else:
+        results, weights = ['lose', 'win', 'draw'], [40, 40, 20]
+    result = random.choices(results, weights=weights, k=1)[0]
+
+    if "win" in result and has_golden_acorn:
+        jackpot_r = random.random()
+        jackpot_r *= 100
+        if jackpot_r < 0.5:
+            result += "_jackpot"
+
+    return result
 
 # 스크립트 실행 시 DB 초기화 (수정된 스키마 반영)
 if __name__ == "__main__":

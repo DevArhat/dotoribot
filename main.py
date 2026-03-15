@@ -728,6 +728,54 @@ def build_bot(is_test, logger_func):
 베팅도토리: {display_price}개
 현재도토리: {balance:,}개
 ```""")
+
+    @bot.hybrid_command(name="반복게임", description="10회재련버튼")
+    @app_commands.describe(베팅="베팅할 도토리 갯수", 반복="반복횟수 (기본 10, 1 ~ 100)")
+    async def repeat_game(ctx, 베팅: int, 반복: int = 10):
+        user_id = str(ctx.author.id)
+        try:
+            total_fluctuation, actual_rounds, wins, losses, draws, jackpot_count, has_cheat_dice, has_golden_acorn, balance = game.repeat_game(user_id, 베팅, 반복)
+        except ValueError as e:
+            bot.add_log(ctx, "/반복게임", f"실패: {e}")
+            await bot_msg(ctx, f"❌ {e}", ephemeral=True)
+            return
+
+        # 결과 이모지 및 텍스트
+        if total_fluctuation > 0:
+            emoji = "🎉"
+            change_text = f"+{total_fluctuation:,}"
+        elif total_fluctuation < 0:
+            emoji = "☠️"
+            change_text = f"{total_fluctuation:,}"
+        else:
+            emoji = "🐿️"
+            change_text = "±0"
+
+        jackpot_text = f" (🎇황금도토리 {jackpot_count}회!)" if jackpot_count > 0 else ""
+        item_text = " [사기 주사위 보유중]" if has_cheat_dice else ""
+
+        if balance == 0:
+            broke_text = "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다...😱"
+        else:
+            broke_text = ""
+        if has_cheat_dice:
+            result_bot_msg = f"""## {emoji} 반복게임 결과{item_text}{jackpot_text}
+```
+시행횟수: {actual_rounds}회 (승 {wins} / 패 {losses} / 무 {draws})
+총 변동 : {change_text}개
+현재잔액: {balance:,}개
+```{broke_text}"""
+        else:
+            result_bot_msg = f"""## {emoji} 반복게임 결과{item_text}{jackpot_text}
+```
+베팅금액: {베팅:,}개
+시행횟수: {actual_rounds}회 (승 {wins} / 패 {losses} / 무 {draws})
+총 변동 : {change_text}개
+현재잔액: {balance:,}개
+```{broke_text}"""
+
+        bot.add_log(ctx, "/반복게임", f"베팅: {베팅:,}, 시행: {actual_rounds}/{반복}, 총변동: {total_fluctuation:,}, 잔액: {balance:,}, 황금도토리: {has_golden_acorn}, 사기주사위: {has_cheat_dice}")
+        await bot_msg(ctx, result_bot_msg)
     
 
     @bot.hybrid_command(name="내돈", description="내 도토리 확인")
