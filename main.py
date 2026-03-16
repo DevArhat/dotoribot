@@ -38,11 +38,28 @@ def build_bot(is_test, logger_func):
     st = StockInfo()
     rd = RhythmDotori()
     game.init_db()
-        
+
+    # 응답 메시지 발송 공통 함수
+    async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
+        if isinstance(ctx, discord.Interaction):
+            # @bot.tree.command 등에서 Interaction 객체가 직접 들어온 경우
+            if ctx.response.is_done():
+                return await ctx.followup.send(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+            else:
+                await ctx.response.send_message(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+                return await ctx.original_response()
+        elif ctx.interaction:
+            # hybrid_command를 통해 슬래시 명령어로 들어온 Context인 경우
+            # Context.send는 내부적으로 interaction.response를 처리해줍니다.
+            return await ctx.send(content=content, embed=embed, stickers=stickers, ephemeral=ephemeral)
+        else:
+            # 일반 메시지 명령어(!명령어)로 들어온 Context인 경우
+            return await ctx.message.reply(content=content, embed=embed, stickers=stickers)        
+
 
     @bot.event
     async def on_ready():
-        try:
+        try:            
             midnight_interest_job.start()
             synced = await bot.tree.sync()
             print(f'{len(synced)}개의 명령어')  # type: ignore
@@ -50,23 +67,6 @@ def build_bot(is_test, logger_func):
             print(f"Error syncing application commands: {e}")
         print(f'로그인 완료: {bot.user.name}')  # type: ignore
         print('--- 봇이 정상적으로 작동 중입니다 ---')
-    
-
-    # 응답 메시지 발송 공통 함수
-    async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
-        if isinstance(ctx, discord.Interaction):
-            # @bot.tree.command 등에서 Interaction 객체가 직접 들어온 경우
-            if ctx.response.is_done():
-                await ctx.followup.send(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
-            else:
-                await ctx.response.send_message(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
-        elif ctx.interaction:
-            # hybrid_command를 통해 슬래시 명령어로 들어온 Context인 경우
-            # Context.send는 내부적으로 interaction.response를 처리해줍니다.
-            await ctx.send(content=content, embed=embed, stickers=stickers, ephemeral=ephemeral)
-        else:
-            # 일반 메시지 명령어(!명령어)로 들어온 Context인 경우
-            await ctx.message.reply(content=content, embed=embed, stickers=stickers)
 
 
     @bot.hybrid_command(name="사용법")
@@ -970,29 +970,34 @@ def build_bot(is_test, logger_func):
         msg = lt.get_lotto_numbers()
         
         await bot_msg(ctx, msg)
-        
+
     
-    # st2 = StockInfoWithSqlite()
-    # @bot.hybrid_command(name="주식2", description="주가 보기")
-    # @app_commands.describe(
-    #     name="회사명 or 티커 번호"
-    # )
-    # async def get_stock_price_v2(ctx, name):
-    #     name = sc.remove_space(name).upper()
-    #     data = st2.get_stock_info(name)
-    #     set_ephemeral = False
-    #     if str(os.getenv('ANGRY_KOKO')) in data:
-    #         bot.add_log(ctx, "/주식2", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip()}")
-    #         data = data.split('$')[0].strip()
-    #         set_ephemeral = True
-    #     else:
-    #         bot.add_log(ctx, "/주식2", f"성공 // 입력 데이터: {name}")
-    #     await bot_msg(ctx, data, ephemeral=set_ephemeral)
+    
+    st2 = StockInfoWithSqlite()
+    @bot.hybrid_command(name="주식2", description="주가 보기")
+    @app_commands.describe(
+        name="회사명 or 티커 번호"
+    )
+    async def get_stock_price_v2(ctx, name):
+        name = sc.remove_space(name).upper()
+        data = st2.get_stock_info(name)
+        set_ephemeral = False
+        if str(os.getenv('ANGRY_KOKO')) in data:
+            bot.add_log(ctx, "/주식2", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip()}")
+            data = data.split('$')[0].strip()
+            set_ephemeral = True
+        else:
+            bot.add_log(ctx, "/주식2", f"성공 // 입력 데이터: {name}")
+        await bot_msg(ctx, data, ephemeral=set_ephemeral)
 
     @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
     async def midnight_interest_job():
+        tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(tz_kst)
         count = game.claim_interest_for_all()
-        print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다.")
+        bot.add_log(bot.user, "/적금통장", f"{count}명 이자 지급 완료")
+        print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다. @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 
         

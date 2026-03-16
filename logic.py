@@ -274,104 +274,104 @@ class Lotto:
             return f"오류가 발생했습니다: {e}"
 
 
-# STOCK_DB_PATH = os.path.join(BASE_DIR, 'stock_data.db')
+STOCK_DB_PATH = os.path.join(BASE_DIR, 'stock_data.db')
 
-# class StockInfoWithSqlite:
-#     def __init__(self):
-#         conn = sqlite3.connect(STOCK_DB_PATH)
-#         cursor = conn.cursor()
+class StockInfoWithSqlite:
+    def __init__(self):
+        conn = sqlite3.connect(STOCK_DB_PATH)
+        cursor = conn.cursor()
 
-#         # stocks 테이블에서 code → official_name 매핑 (stock_data)
-#         cursor.execute("SELECT code, official_name FROM stocks")
-#         self.stock_data = {code: [name] for code, name in cursor.fetchall()}
+        # stocks 테이블에서 code → official_name 매핑 (stock_data)
+        cursor.execute("SELECT code, official_name FROM stocks")
+        self.stock_data = {code: [name] for code, name in cursor.fetchall()}
 
-#         # keywords 테이블에서 keyword → code 매핑 (ALIAS_MAP)
-#         cursor.execute("SELECT keyword, code FROM keywords")
-#         self.ALIAS_MAP = {keyword: code for keyword, code in cursor.fetchall()}
+        # keywords 테이블에서 keyword → code 매핑 (ALIAS_MAP)
+        cursor.execute("SELECT keyword, code FROM keywords")
+        self.ALIAS_MAP = {keyword: code for keyword, code in cursor.fetchall()}
 
-#         conn.close()
+        conn.close()
 
-#     def get_stock_info(self, input: str):
-#         input = SpaceController().remove_space(input).strip().upper()
-#         if bool(re.fullmatch(r'[A-Z0-9]{6}', input)):
-#             ticker=input
-#         else:
-#             ticker=str(self.ALIAS_MAP[input]) if input in self.ALIAS_MAP else input
+    def get_stock_info(self, input: str):
+        input = SpaceController().remove_space(input).strip().upper()
+        if bool(re.fullmatch(r'[A-Z0-9]{6}', input)):
+            ticker=input
+        else:
+            ticker=str(self.ALIAS_MAP[input]) if input in self.ALIAS_MAP else input
 
-#         try:
-#             df = fdr.DataReader(ticker, start = "", end = "")
-#             if df is None or df.empty:
-#                 raise ValueError("Empty DataFrame")
-#         except Exception as e:
-#             return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류 or 입력 잘못됨 or 봇에 등록 안함 $ {e}"
+        try:
+            df = fdr.DataReader(ticker, start = "", end = "")
+            if df is None or df.empty:
+                raise ValueError("Empty DataFrame")
+        except Exception as e:
+            return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류 or 입력 잘못됨 or 봇에 등록 안함 $ {e}"
 
 
-#         data = {
-#             "prev": df.iloc[-2],
-#             "today": df.iloc[-1]
-#         }
+        data = {
+            "prev": df.iloc[-2],
+            "today": df.iloc[-1]
+        }
 
-#         return self.arrange_data(data, ticker)
+        return self.arrange_data(data, ticker)
 
-#     def arrange_data(self, data:dict, ticker:str):
-#         prev_open = int(data['prev']['Open'])
-#         prev_close = int(data['prev']['Close'])
-#         prev_high = int(data['prev']['High'])
-#         prev_low = int(data['prev']['Low'])
-#         prev_volume = int(data['prev']['Volume'])
+    def arrange_data(self, data:dict, ticker:str):
+        prev_open = int(data['prev']['Open'])
+        prev_close = int(data['prev']['Close'])
+        prev_high = int(data['prev']['High'])
+        prev_low = int(data['prev']['Low'])
+        prev_volume = int(data['prev']['Volume'])
 
-#         today_open = int(data['today']['Open'])
-#         today_close = int(data['today']['Close'])
-#         today_high = int(data['today']['High'])
-#         today_low = int(data['today']['Low'])
-#         today_volume = int(data['today']['Volume'])
+        today_open = int(data['today']['Open'])
+        today_close = int(data['today']['Close'])
+        today_high = int(data['today']['High'])
+        today_low = int(data['today']['Low'])
+        today_volume = int(data['today']['Volume'])
 
-#         prev_change = (data['prev']['Change'])*100
-#         today_change = (data['today']['Change'])*100
+        prev_change = (data['prev']['Change'])*100
+        today_change = (data['today']['Change'])*100
 
-#         prev_date = data['prev'].name.strftime("%Y-%m-%d")
-#         today_date = data['today'].name.strftime("%Y-%m-%d")
+        prev_date = data['prev'].name.strftime("%Y-%m-%d")
+        today_date = data['today'].name.strftime("%Y-%m-%d")
 
-#         price_gap = today_close - prev_close
-#         up_or_down = ''
+        price_gap = today_close - prev_close
+        up_or_down = ''
 
-#         if price_gap < 0:
-#             price_gap_str = f"-{-price_gap:,.0f}"
-#             up_or_down = '📉'
-#         elif price_gap > 0:
-#             price_gap_str = f"+{price_gap:,.0f}"
-#             up_or_down = '📈'
-#         else:
-#             price_gap_str = f"{price_gap:,.0f}"
+        if price_gap < 0:
+            price_gap_str = f"-{-price_gap:,.0f}"
+            up_or_down = '📉'
+        elif price_gap > 0:
+            price_gap_str = f"+{price_gap:,.0f}"
+            up_or_down = '📈'
+        else:
+            price_gap_str = f"{price_gap:,.0f}"
 
-#         if prev_change < 0:
-#             prev_change_str = f"-{-prev_change:.2f}%"
-#         elif prev_change > 0:
-#             prev_change_str = f"+{prev_change:.2f}%"
-#         else:
-#             prev_change_str = f"{prev_change:.2f}%"
+        if prev_change < 0:
+            prev_change_str = f"-{-prev_change:.2f}%"
+        elif prev_change > 0:
+            prev_change_str = f"+{prev_change:.2f}%"
+        else:
+            prev_change_str = f"{prev_change:.2f}%"
 
-#         if today_change < 0:
-#             today_change_str = f"-{-today_change:.2f}%"
-#         elif today_change > 0:
-#             today_change_str = f"+{today_change:.2f}%"
-#         else:
-#             today_change_str = f"{today_change:.2f}%"
+        if today_change < 0:
+            today_change_str = f"-{-today_change:.2f}%"
+        elif today_change > 0:
+            today_change_str = f"+{today_change:.2f}%"
+        else:
+            today_change_str = f"{today_change:.2f}%"
 
-#         display_name = self.stock_data[ticker][0] if ticker in self.stock_data else ticker
-#         msg = f"""# {display_name} : {up_or_down} {today_close:,.0f} ( {price_gap_str} | {today_change_str} )
-# ```markdown
-# {display_name} ({ticker}) 가격정보
-# 날짜: {today_date:^10} || {prev_date}
-# 시가: {today_open:^10,.0f} || {prev_open:^10,.0f}
-# 종가: {today_close:^10,.0f} || {prev_close:^10,.0f}
-# 고가: {today_high:^10,.0f} || {prev_high:^10,.0f}
-# 저가: {today_low:^10,.0f} || {prev_low:^10,.0f}
-# 등락: {today_change_str:^10} || {prev_change_str:^10}
-# 거래량: {today_volume:^10,.0f} || {prev_volume:^10,.0f}
-# ```
-# """
-#         return msg
+        display_name = self.stock_data[ticker][0] if ticker in self.stock_data else ticker
+        msg = f"""# {display_name} : {up_or_down} {today_close:,.0f} ( {price_gap_str} | {today_change_str} )
+```markdown
+{display_name} ({ticker}) 가격정보
+날짜: {today_date:^10} || {prev_date}
+시가: {today_open:^10,.0f} || {prev_open:^10,.0f}
+종가: {today_close:^10,.0f} || {prev_close:^10,.0f}
+고가: {today_high:^10,.0f} || {prev_high:^10,.0f}
+저가: {today_low:^10,.0f} || {prev_low:^10,.0f}
+등락: {today_change_str:^10} || {prev_change_str:^10}
+거래량: {today_volume:^10,.0f} || {prev_volume:^10,.0f}
+```
+"""
+        return msg
 
 
 def calc_logic(price, dotoris):        
@@ -513,49 +513,35 @@ def run_vercel(game, dolpa):
     else:
         return f"API 요청 실패: {response.status_code}"
                 
+def write_log(target, command, details, path):
+    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
+    
+    try:
+        if target is None:
+            username = "SYSTEM"
+            user_id = "0"
+        else:
+            user = getattr(target, 'author', getattr(target, 'user', target))
+            user_id = getattr(user, 'id', '0')
+            name_temp = getattr(user, 'display_name', None) or str(user)
+            username = name_temp if name_temp else 'UNKNOWN'
+    except:
+        username = "UNKNOWN"
+        user_id = "0"
+    
+    msg = f"[{now}] {username}({user_id}) | {command} | {details}\n"
 
+    with open(path, 'a', encoding='utf-8') as log_file:
+        log_file.write(msg)
 
 def add_log(target, command, details='No Details'):
-    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
-    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
+    path = LOG_PATH
+    write_log(target, command, details, path)
     
-    user = target.author if hasattr(target, 'author') else target.user
-    username = user.display_name or str(user)
-    
-    msg = f"[{now}] {username}({user.id}) | {command} | {details}"
-
-    with open(LOG_PATH, 'a', encoding='utf-8') as log_file:
-        log_file.write(msg + '\n')
-        
 def add_test_log(target, command, details='No Details'):
-    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
-    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
-    
-    user = target.author if hasattr(target, 'author') else target.user
-    username = user.display_name or str(user)
-    
-    msg = f"[{now}] {username}({user.id}) | {command} | {details}"
-
-    with open(TEST_LOG_PATH, 'a', encoding='utf-8') as log_file:
-        log_file.write(msg + '\n')
-    
-    
-def load_time_table():
-    if os.path.exists(TIME_TABLE_PATH):
-        try:
-            with open(TIME_TABLE_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            print("Error decoding JSON from time_table.json")
-            return {}
-    return {}
-
-def refresh_time_table(data):
-    try:
-        with open(TIME_TABLE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error writing to time_table.json: {e}")
+    path = TEST_LOG_PATH
+    write_log(target, command, details, path)
         
 def get_game_key(game):
     game_map = {
