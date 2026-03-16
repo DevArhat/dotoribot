@@ -172,6 +172,30 @@ def dotori_game_commands(bot, bot_msg):
         
         bot.add_log(ctx, "/랭킹")
         await bot_msg(ctx, content=ranking_text)
+
+    @bot.hybrid_command(name="불법도토리", description="불법도토리 유통 정황 탐색")
+    async def rich_players(ctx):
+        await ctx.defer()
+        rows, total_sum = game.get_rich_players(1000000000)
+        
+        if not rows:
+            await bot_msg(ctx, "도토리 게임장은 아직 건전해요! 🐿️")
+            return
+        
+        rich_text = "## 👀 불법 의심 도토리 유통 정황\n```markdown\n"
+        for i, (user_id, amount) in enumerate(rows):
+            try:
+                member = ctx.guild.get_member(int(user_id)) or await ctx.guild.fetch_member(int(user_id))
+                name = member.display_name
+            except Exception:
+                name = f"유저({user_id})"
+            rich_text += f"{i+1}. {name} : {amount:,}개\n"
+        
+        rich_text += f"\n* 불법 의심 도토리 총합: {total_sum:,}개\n"
+        rich_text += "```"
+        
+        bot.add_log(ctx, "/불법도토리", f"불법 의심자 수: {len(rows)}, 총합: {total_sum:,}")
+        await bot_msg(ctx, content=rich_text)
         
     @bot.hybrid_command(name="내템", description="내가 구매한 아이템 확인")
     async def my_item(ctx):

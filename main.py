@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from featrues import *
+from features import *
 
 from logic import *
 import game
@@ -56,10 +56,7 @@ def build_bot(is_test, logger_func):
             return await ctx.message.reply(content=content, embed=embed, stickers=stickers)        
 
     # commands 내부의 명령어 등록
-    dotori_game_commands(bot, bot_msg)
-    singing_dotori_commands(bot, bot_msg)
-    lostark_utils_commands(bot, bot_msg)
-    show_stock_commands(bot, bot_msg)
+    load_all_commands(bot, bot_msg)
 
 
 

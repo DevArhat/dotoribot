@@ -495,6 +495,31 @@ def get_ranking(limit: int = 10) -> list:
     conn.close()
     return rows
 
+def get_rich_players(threshold: int = 1000000000) -> tuple:
+    """보유 금액이 임계값 이상인 유저 목록과 그들 총액의 합계를 조회한다."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    # 1. 임계값 이상의 유저 조회
+    cursor.execute("""
+        SELECT user_id, current_amount 
+        FROM money 
+        WHERE current_amount >= ?
+        ORDER BY current_amount DESC
+    """, (threshold,))
+    rows = cursor.fetchall()
+    
+    # 2. 해당 유저들의 총액 합계 조회
+    cursor.execute("""
+        SELECT SUM(current_amount) 
+        FROM money 
+        WHERE current_amount >= ?
+    """, (threshold,))
+    total_sum = cursor.fetchone()[0] or 0
+    
+    conn.close()
+    return rows, total_sum
+
 def duel(challenger_id: str, opponent_id: str, bet: int) -> tuple:
     """
     두 유저 간 결투를 수행한다.
