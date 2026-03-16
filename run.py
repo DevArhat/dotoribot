@@ -14,4 +14,4 @@ def normal_logger(target, command, details='No Details'):
 if __name__ == "__main__":
     TOKEN = os.getenv('DISCORD_TOKEN')
     print(f"[일반 모드] 로그인 중 . . .")
-    bot_run(TOKEN, normal_logger)
+    bot_run(False, normal_logger)

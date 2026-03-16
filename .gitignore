@@ -1,4 +1,5 @@
 .venv/
+*.venv/
 __pycache__/
 *.env
 test*
@@ -7,3 +8,5 @@ time_table.json
 !test.py
 test/
 *.db
+temp_codes/
+.vscode/

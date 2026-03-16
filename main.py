@@ -6,40 +6,64 @@ import os
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
-import asyncio
+from features import *
 
 from logic import *
+import game
 
 class DotoriBot(commands.Bot):
-    def __init__(self, logger_func):
+
+    def __init__(self, is_test, logger_func):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True
+        intents.voice_states = True
         super().__init__(command_prefix='!', intents=intents)
         self.add_log = logger_func
+        self.angry_koko = os.getenv('ANGRY_KOKO')
+        if is_test:
+            self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID_TEST')))
+        else:
+            self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID')))
         
     async def setup_hook(self):
         await self.tree.sync()  # 슬래시 명령어 동기화
 load_dotenv()
 
-def build_bot(logger_func):        
-    bot = DotoriBot(logger_func)
+def build_bot(is_test, logger_func):        
+    bot = DotoriBot(is_test, logger_func)
     sc = SpaceController()
-    st = StockInfo()
-    rd = RhythmDotori()
 
+    game.init_db()
 
-    TIME_TABLE = load_time_table()
+    # 응답 메시지 발송 공통 함수
+    async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
+        if isinstance(ctx, discord.Interaction):
+            # @bot.tree.command 등에서 Interaction 객체가 직접 들어온 경우
+            if ctx.response.is_done():
+                return await ctx.followup.send(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+            else:
+                await ctx.response.send_message(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+                return await ctx.original_response()
+        elif ctx.interaction:
+            # hybrid_command를 통해 슬래시 명령어로 들어온 Context인 경우
+            # Context.send는 내부적으로 interaction.response를 처리해줍니다.
+            return await ctx.send(content=content, embed=embed, stickers=stickers, ephemeral=ephemeral)
+        else:
+            # 일반 메시지 명령어(!명령어)로 들어온 Context인 경우
+            return await ctx.message.reply(content=content, embed=embed, stickers=stickers)        
 
-    # 인텐트 설정 (메시지 내용을 읽기 위해 필수)
-    intents = discord.Intents.default()
-    intents.message_content = True
+    # commands 내부의 명령어 등록
+    load_all_commands(bot, bot_msg)
+
 
 
     @bot.event
     async def on_ready():
-        try:
+        try:            
+            midnight_interest_job.start()
             synced = await bot.tree.sync()
             print(f'{len(synced)}개의 명령어')  # type: ignore
         except Exception as e:
@@ -47,99 +71,126 @@ def build_bot(logger_func):
         print(f'로그인 완료: {bot.user.name}')  # type: ignore
         print('--- 봇이 정상적으로 작동 중입니다 ---')
 
+
+
+
+
+
     @bot.hybrid_command(name="사용법")
     async def usage(ctx):
         help_text = """# 🐿️ 도토리봇 사용법
 ```markdown
-# 일반 명령어 
+# 일반 명령어
 !사용법 : 도움말
 /이번주가디언 : 이번주 가디언, 카드, 기간
 /다음주가디언 : 다음주 가디언, 카드, 기간
 
-# 링크 바로가기 
+# 링크 바로가기
 /시트
 /로아투두
 /인벤, /10추, /30추
 /지옥효율, /낙원추천
 
-# 특수 명령어 (입력 인수 필요)
+# 경매 계산기
 /쌀 [가격] [인원수]
 ㄴ 최적입찰가 계산기 (공평분배 기준)
+/선점쌀 [가격] [인원수]
+ㄴ 선점가 기준 최적입찰가 계산기
 
+# 로아 유틸
 /가디언예측 [년] [월] [일]
 ㄴ 특정 날짜 가디언 예측하기
 
+# 게임
+/돈줘 : 도토리 100,000개 지급 (5분 쿨타임)
+/게임 [베팅] : 도토리를 걸고 게임하기
+/내돈 : 내 도토리 잔액 확인
+/아이템 : 구매 가능한 아이템 목록 확인
+/구매 [아이템] : 아이템 구매 (사기주사위, 적금통장)
+/내템 : 내가 보유한 아이템 확인
+
+# 음악
+/노래 [유튜브 URL] : 노래 재생
+/목록 : 현재 대기열 확인
+/스킵 : 현재 곡 건너뛰기
+/정지 : 재생 멈추고 대기열 초기화
+
+# 뽑기 시뮬레이터
 /뽑기 [게임명] [돌파]
-ㄴ 뽑기 시뮬레이터 (게임명 잘못 쓰면 붕스가 기본값됨)
+ㄴ 원신, 붕스, 젠존제, 명조, 엔필 지원
 
-/주식 [회사명 or 티커 번호]
-ㄴ 주가 보기 (KOSPI만 지원, ETF도 몇개 됨)
+# 주식
+/주식 [티커 번호 or 회사명]
+ㄴ 주가 보기 (KOSPI만 지원, ETF 일부 가능, 티커번호 권장)
 
-/노래 [유튜브 주소]
-ㄴ 노래 틀기 (검색어도 되는데 부정확해서 URL 추천)
+# 로또
+/로또추천 : 로또 번호 랜덤 추천
 
-# 기타 잡다한 명령어
-!안녕   : 인사하기
-!뒤집기 [문구] : 입력한 문구를 거꾸로 뒤집어서 출력
-!빠직   : 앵그리코코 출력
-/에이메스 : 에이메스 이미지 랜덤 출력
+# 기타
+!안녕 : 인사하기
+/빠직 : 앵그리코코 출력
+/에이메스 : 에이메스 이미지 4종 중 1개 랜덤 출력
+/캡틴잭 : 그긴거 출력
+/홀짝 : 홀 or 짝 출력
+/뒤집기 [문구] : 입력한 문구를 거꾸로 뒤집어서 출력
 ```"""
         await ctx.send(help_text, ephemeral=True)
 
-    # !안녕 명령어
+
     @bot.command(name="안녕")
     async def hello(ctx):
         bot.add_log(ctx, "!안녕")
-        sticker = discord.Object(id=1247156880124543059)
-        await ctx.send(" ", stickers=[sticker])
-
-    # !뒤집기 [문구내용] 명령어
+        sticker = discord.Object(id=int(str(os.getenv('DOTORI_HI'))))
+        await bot_msg(ctx, " ", stickers=[sticker])
+        
     @bot.hybrid_command(name="뒤집기")
     async def reverse_text(ctx, *, text: str):
         # 파이썬의 슬라이싱을 이용하여 문자열을 거꾸로 뒤집습니다.
         reversed_text = text[::-1]
         bot.add_log(ctx, "/뒤집기", f"입력: {text}, 결과: {reversed_text}")
-        await ctx.send(reversed_text)
+        await bot_msg(ctx, reversed_text)
         
     @bot.hybrid_command(name="빠직")
     async def angry_koko(ctx):
         bot.add_log(ctx, "/빠직")
-        await ctx.send(f"<:AngryKoko:1421511652376842443>")
-        
+        await bot_msg(ctx, f"{bot.angry_koko}")
+
+
+
     @bot.hybrid_command(name="시트", description="도토리 레이드 시트 링크")
     async def send_sheet_link(ctx):
         bot.add_log(ctx, "/시트")
-        await ctx.send(f"# [도토리 레이드 시트]({os.getenv('DOTORI_RAID_SHEET')})")
+        await bot_msg(ctx, f"# [도토리 레이드 시트]({os.getenv('DOTORI_RAID_SHEET')})")
         
     @bot.hybrid_command(name="지옥효율", description="지옥 효율 계산 링크")
     async def send_hell_efficiency_link(ctx):
         bot.add_log(ctx, "/지옥효율")
-        await ctx.send(f"# [지옥효율 바로가기](https://www.gcalc.kr/hell)")
+        await bot_msg(ctx, f"# [지옥효율 바로가기](https://www.gcalc.kr/hell)")
         
     @bot.hybrid_command(name="낙원추천", description="낙원 장비 시너지 추천기 링크")
     async def send_paradise_recommendation_link(ctx):
         bot.add_log(ctx, "/낙원추천")
-        await ctx.send(f"# [낙원추천 바로가기](https://codepen.io/ialgqfxp-the-animator/pen/NPrQxOx)")
+        await bot_msg(ctx, f"# [낙원추천 바로가기](https://codepen.io/ialgqfxp-the-animator/pen/NPrQxOx)")
         
     @bot.hybrid_command(name="로아투두", description="로아투두 링크")
     async def send_lostark_todo_link(ctx):
         bot.add_log(ctx, "/로아투두")
-        await ctx.send(f"# [로아투두 바로가기](https://www.loatodo.com/)")
+        await bot_msg(ctx, f"# [로아투두 바로가기](https://www.loatodo.com/)")
         
     @bot.hybrid_command(name="인벤", description="인벤 링크")
     async def send_inven_link(ctx):
         bot.add_log(ctx, "/인벤")
-        await ctx.send(f"# [인벤 바로가기](https://lostark.inven.co.kr/)")
+        await bot_msg(ctx, f"# [인벤 바로가기](https://lostark.inven.co.kr/)")
         
     @bot.hybrid_command(name="10추", description="10추글 링크")
     async def send_10pull_link(ctx):
         bot.add_log(ctx, "/10추")
-        await ctx.send(f"# [10추글 바로가기](https://www.inven.co.kr/board/lostark/6271?my=chu)")
+        await bot_msg(ctx, f"# [10추글 바로가기](https://www.inven.co.kr/board/lostark/6271?my=chu)")
 
     @bot.hybrid_command(name="30추", description="30추글 링크")
     async def send_30pull_link(ctx):
         bot.add_log(ctx, "/30추")
-        await ctx.send(f"# [30추글 바로가기](https://www.inven.co.kr/board/lostark/6271?my=chuchu)")
+        await bot_msg(ctx, f"# [30추글 바로가기](https://www.inven.co.kr/board/lostark/6271?my=chuchu)")
 
     @bot.hybrid_command(name="에이메스", description="에이메스 이미지")
     async def send_image(ctx):
@@ -153,108 +204,22 @@ def build_bot(logger_func):
         image_url = random.choice(image_urls)
         embed = discord.Embed(title="에이메스", description="제가 당신의 자랑이었으면 좋겠어요. 제가 당신을 실망시키지 않았으면 좋겠어요.", color=0xeb9cb9)
         embed.set_image(url=image_url)
-        await ctx.send(embed=embed)
+        await bot_msg(ctx, content="",embed=embed)
 
-
-    @bot.hybrid_command(name="이번주가디언", description="이번주 가디언 정보")
-    async def send_weekly_guardian_info(ctx):
-        bot.add_log(ctx, "/이번주가디언")
-        g = LostArkGuardian().get_lostark_weekly_info()
-        
-        msg = (f"""# {g[1]} ({g[2]})
-    {g[0]}""")
-        await ctx.send(msg)
-
-    @bot.hybrid_command(name="다음주가디언", description="다음주 가디언 정보")
-    async def send_next_week_guardian_info(ctx):
-        bot.add_log(ctx, "/다음주가디언")
-        g = LostArkGuardian().get_lostark_weekly_info()
-        
-        msg = (f"""# {g[4]} ({g[5]})
-    {g[3]}""")
-        await ctx.send(msg)
-
-    @bot.tree.command(name="가디언예측", description="특정 날짜 가디언 예측하기")
-    @app_commands.describe(
-        year="년 (예: 2026)",
-        month="월 (예: 3)",
-        day="일 (예: 5)"
-    )
-    async def predict_guardian(ctx, year: int, month: int, day: int):
-        bot.add_log(ctx, "/가디언예측", f"{year}-{month}-{day}")
-        g = LostArkGuardian().get_lostark_weekly_info_predict(year, month, day)
-        
-        msg = (f"""# {g[1]} ({g[2]})
-    {g[0]}""")
-        await ctx.response.send_message(msg)
-
-    # 슬래시 명령어 생성: 
-    @bot.tree.command(name="쌀", description="경매 쌀산기")
-    # 스페이스바를 눌렀을 때 뜰 입력칸(파라미터)에 대한 설명입니다.
-    @app_commands.describe(
-        price="경매템 가격",
-        dotoris="몇인팟 컨텐츠임?"
-    )
-    async def calculate(interaction: discord.Interaction, price: int, dotoris: int):
-        response_text = calc_logic(price, dotoris)[0]
-        response_tuple = calc_logic(price, dotoris)[1]
-        
-        bot.add_log(interaction,
-                "/쌀",
-                f"가격: {price}, 인원수: {dotoris}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
-        # interaction.response.send_message를 통해 답장을 보냅니다.
-        await interaction.response.send_message(response_text)
-        
-    # @bot.hybrid_command(name="refresh_time_table", description="시간표 갱신하기")
-    # @app_commands.describe(
-    #     data="시간표 정리 JSON"
-    # )
-    # async def refresh_time_table_command(ctx, data: str):
-    #     try:
-    #         json_data = json.loads(data)
-    #         TIME_TABLE.update(json_data)
-    #         refresh_time_table(json_data)
-    #         sc.replace_space(data)
-    #         bot.add_log(ctx, "/시간표갱신", f"성공 // 입력 데이터: {data}")
-    #         await ctx.send("시간표가 성공적으로 갱신되었습니다.", ephemeral=True)
-    #     except json.JSONDecodeError:
-    #         sc.remove_space(data)
-    #         bot.add_log(ctx, "/시간표갱신", f"실패 // 입력 데이터: {data}")
-    #         await ctx.send("유효한 JSON 형식이 아닙니다. 다시 시도해주세요.", ephemeral=True)
+    @bot.hybrid_command(name="캡틴잭", description="캡틴잭 그긴거")
+    async def send_captain_jack(ctx):
+        try:
+            with open(os.path.join(BASE_DIR, 'captain_jack.txt'), 'r', encoding='utf-8') as f:
+                captain_jack = f.read()
+            bot.add_log(ctx, "/캡틴잭")
+        except FileNotFoundError:
+            captain_jack = "이런! 캡틴잭이 제 저장장치를 부숴버렸어요!"
+            bot.add_log(ctx, "/캡틴잭", "[오류] FileNotFoundError")
             
-    # @bot.hybrid_command(name="시간표", description="내가 갈 레이드, 요일, 시간")
-    # async def get_time_table(ctx):
-    #     user_id = str(ctx.author.id)
-    #     if user_id in TIME_TABLE:
-    #         user_info = TIME_TABLE[user_id]
-    #         response_text = f"<@{user_id}> 의 레이드 시간표입니다:\n```markdown\n"
-    #         for raid in user_info:
-    #             response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-    #         response_text += "```"
-    #         bot.add_log(ctx, "/시간표조회", f"성공 // 사용자 ID: {user_id}")
-    #         await ctx.send(response_text, ephemeral=True)
-    #     else:
-    #         bot.add_log(ctx, "/시간표조회", f"실패 // 사용자 ID: {user_id} (정보 없음)")
-    #         await ctx.send("시간표 정보가 없습니다 ㅠㅠ", ephemeral=True)
+        await bot_msg(ctx, content=captain_jack)
 
-    # @bot.hybrid_command(name="전체시간표", description="저장되어 있는 전체 시간표 보기")
-    # async def get_everyone_time_table(ctx):
-    #     bot.add_log(ctx, "/전체시간표")
-    #     final_msg = ''
-    #     for user_id, raid_list in TIME_TABLE.items():
-    #         user_obj = await bot.fetch_user(int(user_id))
-    #         nick = user_obj.display_name
 
-    #         response_text = f"**{nick}** 의 레이드 시간표입니다:\n```markdown\n"
-    #         for raid in raid_list:
-    #             response_text += f"- {raid['name']}: {raid['day']}요일 {raid['time']}시\n"
-    #         response_text += "```\n"
-            
-    #         final_msg += response_text
-            
-    #     await ctx.send(final_msg, ephemeral=True)
-        
-        
+
     @bot.tree.command(name="뽑기", description="뽑기 시뮬레이터")
     @app_commands.describe(
         game="원신, 붕스, 젠존제, 명조, 엔필",
@@ -265,168 +230,59 @@ def build_bot(logger_func):
         
         bot.add_log(ctx, "/뽑기", f"게임: {game}(매칭결과: {game_key}), 돌파: {dolpa}")
 
-        await run_vercel(ctx, game_key, dolpa)
+        result = run_vercel(game_key, dolpa)
+        await bot_msg(ctx, result)
         
-    @bot.hybrid_command(name="주식", description="주가 보기")
-    @app_commands.describe(
-        name="회사명 or 티커 번호"
-    )
-    async def get_stock_price(ctx, name):
-        data = st.get_stock_info(name)
-        set_ephemeral = False
-        if str(os.getenv('ANGRY_KOKO')) in data:
-            bot.add_log(ctx, "/주식", f"실패 // 입력 데이터: {name} // Exception: {data.split('$')[1].strip()}")
-            data = data.split('$')[0].strip()
-            set_ephemeral = True
-        else:
-            bot.add_log(ctx, "/주식", f"성공 // 입력 데이터: {name}")
-        await ctx.send(data, ephemeral=set_ephemeral)
+
+
+    @bot.hybrid_command(name="로또추천", description="님들아 로또 1등되면 뭐할거임?")
+    async def lotto(ctx):
+        
+        numbers = sorted(random.sample(range(1, 46), 6))
+        bonus_number = random.choice([i for i in range(1, 46) if i not in numbers])
+        
+        embed = discord.Embed(
+            title="🐿️ 로또 번호 생각하는 중...",
+            description="생각햇따!!",
+            color=discord.Color.gold()
+        )
+        
+        embed.add_field(
+            name="🍀 당첨 번호",
+            value=f"**{' - '.join(map(str, numbers))}**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="✨ 보너스 번호",
+            value=f"**{bonus_number}**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💸 사러가기",
+            value="[동행복권 사이트](https://www.dhlottery.co.kr/main)",
+            inline=False
+        )
+        
+        await bot_msg(ctx, embed=embed)
+
+
+    
     
 
-    music_queues = {}
-    inactive_timers = {}
-    default_bot_volume=0.15
 
-    async def start_inactivity_timer(ctx, voice_client):
-        """5분(300초) 대기 후 재생 중이 아니면 음성 채널에서 나가는 타이머"""
-        # 기존에 돌고 있는 타이머가 있다면 취소
-        if ctx.guild.id in inactive_timers:
-            inactive_timers[ctx.guild.id].cancel()
 
-        async def timer():
-            try:
-                await asyncio.sleep(300)  # 300초 (5분) 대기
-                # 5분이 지났는데도 봇이 채널에 있고, 재생/일시정지 중이 아니라면 퇴장
-                if voice_client.is_connected() and not voice_client.is_playing() and not voice_client.is_paused():
-                    await voice_client.disconnect()
-                    await ctx.send("나 나간다! 🐿️💨")
-            except asyncio.CancelledError:
-                # 누군가 5분 안에 새 노래를 틀어서 타이머가 취소된 경우
-                pass
 
-        # 타이머를 백그라운드 태스크로 실행하고 딕셔너리에 저장
-        task = ctx.bot.loop.create_task(timer())
-        inactive_timers[ctx.guild.id] = task
 
-    def play_next(error, ctx, voice_client):
-        if error:
-            print(f"Player error: {error}")
-        
-        # 큐에 남은 곡이 있다면 다음 곡 재생
-        if ctx.guild.id in music_queues and len(music_queues[ctx.guild.id]) > 0:
-            next_song = music_queues[ctx.guild.id].pop(0)
-            
-            audio_source = discord.FFmpegPCMAudio(next_song['url'], **next_song['ffmpeg_options'])
-            volume_transformer = discord.PCMVolumeTransformer(audio_source, volume=0.15) # 기본 볼륨 설정
-            
-            voice_client.play(volume_transformer, after=lambda e: play_next(e, ctx, voice_client))
-            
-            # 봇 루프를 사용해 Threadsafe하게 비동기 메시지 전송
-            coro = next_song['ctx'].send(f"**{next_song['title']}**\n🎶 이어서 부를게요")
-            import asyncio
-            asyncio.run_coroutine_threadsafe(coro, ctx.bot.loop)
+    @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
+    async def midnight_interest_job():
+        tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(tz_kst)
+        count = game.claim_interest_for_all()
+        bot.add_log(bot.user, "/적금통장", f"{count}명 이자 지급 완료")
+        print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다. @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    @bot.hybrid_command(name="노래", aliases=["음악", "풍악", "재생", "리듬"], description="유튜브 URL을 주면 도토리가 노래를 해요")
-    @app_commands.describe(
-        url="유튜브 URL. 검색어도 되는데 검색결과가 부정확할 때가 있어요"
-    )
-    async def play_music(ctx, url: str):
-        await ctx.defer()
-        
-        if not ctx.author.voice:
-            await ctx.send("어느 채널로 가야되는지 모르겠어! 😱")
-            return
-        channel = ctx.author.voice.channel
-        voice_client = ctx.voice_client
-
-        if voice_client is None:
-            voice_client = await channel.connect()
-        else:
-            await voice_client.move_to(channel)
-
-        msg = await ctx.send("노래 외우는 중.. 잠시만 기다려주세요...")
-
-        # 3. yt-dlp로 스트리밍 URL 추출 (비동기 처리로 봇 멈춤 방지)
-        try:
-            loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, lambda: rd.ytdl.extract_info(url, download=False))
-            
-            if 'entries' in data:
-                data = data['entries'][0]
-                
-            stream_url = data['url']
-            title = data['title']
-            
-            # 곡 정보를 딕셔너리로 저장
-            song_info = {
-                'url': stream_url, 
-                'title': title, 
-                'ctx': ctx, 
-                'ffmpeg_options': rd.ffmpeg_options
-            }
-
-            if ctx.guild.id not in music_queues:
-                music_queues[ctx.guild.id] = []
-
-            # 4. 이미 재생 중이거나 일시정지 상태인 경우 대기열에 추가
-            if voice_client.is_playing() or voice_client.is_paused():
-                music_queues[ctx.guild.id].append(song_info)
-                await msg.edit(content=f"""**{title}**
-📝 대기열에 추가했어요 """)
-            else:
-                # 볼륨 조절을 위해 PCMVolumeTransformer 사용 (기본값 0.5 = 50%)
-                default_volume = 0.15
-                audio_source = discord.FFmpegPCMAudio(stream_url, **rd.ffmpeg_options)
-                volume_transformer = discord.PCMVolumeTransformer(audio_source, volume=default_volume)
-                
-                # after 콜백을 연결하여 현재 곡이 끝나면 play_next 함수가 실행되도록 함
-                voice_client.play(volume_transformer, after=lambda e: play_next(e, ctx, voice_client))
-                
-                logger_func(ctx, "/노래", f"input: {url}, title: {title}, url: {stream_url}")
-                await msg.edit(content=f"""**{title}**
-🎶 오케이! 한번 불러볼게요.""")
-            
-        except Exception as e:
-            logger_func(ctx, "/노래", f"input: {url}, error: {e}")
-            await msg.edit(content="노래를 못찾겠어! 😱")
-
-    @bot.hybrid_command(name="목록", aliases=["대기열", "큐", "queue"], description="현재 대기 중인 노래 목록")
-    async def show_queue(ctx):
-        if ctx.guild.id not in music_queues or not music_queues[ctx.guild.id]:
-            await ctx.send("신청곡 기다리는 중 🎵")
-            return
-        
-        queue_list = music_queues[ctx.guild.id]
-        queue_text = "📜 **현재 대기열** 📜\n"
-        for i, song in enumerate(queue_list, 1):
-            queue_text += f"**{i}.** `{song['title']}`\n"
-        
-        await ctx.send(queue_text)
-
-    @bot.hybrid_command(name="스킵", aliases=["넘겨", "skip", "다음"], description="스킵")
-    async def skip_music(ctx):
-        voice_client = ctx.voice_client
-        if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
-            voice_client.stop()
-            await ctx.send("알았어요. 다음 곡 부를게!")
-        else:
-            await ctx.send("지금 재생 중인 노래가 없어! 🤔")
-            
-    @bot.hybrid_command(name="정지", aliases=["그만", "멈춰", "중지"], description="재생목록 비우기")
-    async def clear_queue(ctx):
-        voice_client = ctx.voice_client
-        if voice_client:
-            music_queues[ctx.guild.id] = []
-            if voice_client.is_playing() or voice_client.is_paused():
-                voice_client.stop()
-                await ctx.send("## ... (조용도토리)")
-            else:
-                await ctx.send("노래를 다 까먹었어요!")
-        else:
-            await ctx.send("지금 연결되어 있지 않아요!")
-            
-        
-        
 
     @bot.event
     async def on_command_error(ctx, error):
@@ -435,39 +291,26 @@ def build_bot(logger_func):
         error_type = type(error).__name__
 
         # 1. 모든 함수에 대해 전역 오류 핸들러로 동작
-        await ctx.send("👀 저를부르셨나요? /사용법 을 써보세요. 아니라면? ㅈㅅ합니다.")
-        bot.add_log(ctx, str(error), f"오류 발생 함수: {command_name}, 오류 타입: {error_type}")
+        await bot_msg(ctx, "👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        bot.add_log(ctx,f"/{command_name}", f"오류 발생 함수: {command_name}, 오류 타입: {error_type}, 오류 내용: {str(error)}")
         
         # 2. 오류가 발생한 함수와 발생 오류 타입을 print
         print(f"오류 발생 함수: {command_name}")
         print(f"오류 타입: {error_type}")
         
-    @bot.event
-    async def on_voice_state_update(member, before, after):
-        """음성 채널에 봇만 남으면 대기열을 비우고 퇴장"""
-        voice_client = member.guild.voice_client
-        
-        if not voice_client:
-            return
-            
-        if before.channel is not None and after.channel != before.channel:
-            if before.channel.id == voice_client.channel.id:
-                real_members = [m for m in voice_client.channel.members if not m.bot]
-                
-                if len(real_members) == 0:
-                    if member.guild.id in music_queues:
-                        music_queues[member.guild.id] = []
-                    
-                    if member.guild.id in inactive_timers:
-                        inactive_timers[member.guild.id].cancel()
-                        del inactive_timers[member.guild.id]
-                    
-                    await voice_client.disconnect()
+
+
         
     return bot
 
 
 
-def bot_run(token, logger_func):
-    bot = build_bot(logger_func)
+def bot_run(is_test, logger_func):
+    if is_test:
+        token = os.getenv('DOTORI_BOT_TOKEN_TEST')
+    else:
+        token = os.getenv('DOTORI_BOT_TOKEN')
+    token = str(token)
+    
+    bot = build_bot(is_test, logger_func)
     bot.run(token)
