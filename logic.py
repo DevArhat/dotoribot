@@ -114,119 +114,7 @@ class RhythmDotori:
     def __init__(self):
         self.ytdl = yt_dlp.YoutubeDL(self.ytdl_format_options) # type: ignore
 
-class StockInfo:
-    with open(KOSPI_TICKER_PATH, 'r', encoding='utf-8') as f:
-        stock_data = json.load(f)
-        
-    stock_data = {code: [name] for code, name in stock_data.items()}
-    
-    stock_alias = {
-        "005930": ["삼성전자", "삼전", "스캠전자", "개미지옥"],
-        "000660": ["SK하이닉스", "하이닉스", "하닉"],
-        "012450": ["한화에어로스페이스", "한화에어로", "에어로", "자주포", "K9"],
-        "005380": ["현대차", "현차", "현대"],
-        "042660": ["한화오션", "오션"],
-        "064350": ["현대로템", "로템"],
-        "079550": ["LIG넥스원", "넥스원"],
-        "272210": ["한화시스템"],
-        "042700": ["한미반도체"],
-        "252670": ["곱버스"]
-    }
-    
-    for code, aliases in stock_alias.items():
-        if code in stock_data:
-            stock_data[code].extend(aliases)
-        else:
-            stock_data[code] = aliases
-    
-    
-    ALIAS_MAP = {}
 
-    def __init__(self):    
-        for code, aliases in self.stock_data.items():
-            for alias in aliases:
-                self.ALIAS_MAP[alias] = code
-    
-    def get_stock_info(self, input: str):
-        input = SpaceController().remove_space(input).strip().upper()
-        if bool(re.fullmatch(r'[A-Z0-9]{6}', input)):
-            ticker=input
-        else:
-            ticker=str(self.ALIAS_MAP[input]) if input in self.ALIAS_MAP else input
-            
-        try:
-            df = fdr.DataReader(ticker, start = "", end = "")
-            if df is None or df.empty:
-                raise ValueError("Empty DataFrame")
-        except Exception as e:
-            return f"{os.getenv('ANGRY_KOKO')} 주가 정보가 업셔.. 일시적인 오류 or 입력 잘못됨 or 봇에 등록 안함 $ {e}"
-        
-        
-        data = {
-            "prev": df.iloc[-2],
-            "today": df.iloc[-1]
-        }
-        
-        return self.arrange_data(data, ticker)
-    
-    def arrange_data(self, data:dict, ticker:str):
-        prev_open = int(data['prev']['Open'])
-        prev_close = int(data['prev']['Close'])
-        prev_high = int(data['prev']['High'])
-        prev_low = int(data['prev']['Low'])
-        prev_volume = int(data['prev']['Volume'])
-        
-        today_open = int(data['today']['Open'])
-        today_close = int(data['today']['Close'])
-        today_high = int(data['today']['High'])
-        today_low = int(data['today']['Low'])
-        today_volume = int(data['today']['Volume'])
-        
-        prev_change = (data['prev']['Change'])*100
-        today_change = (data['today']['Change'])*100
-        
-        prev_date = data['prev'].name.strftime("%Y-%m-%d")
-        today_date = data['today'].name.strftime("%Y-%m-%d")
-        
-        price_gap = today_close - prev_close
-        up_or_down = ''
-        
-        if price_gap < 0:
-            price_gap_str = f"-{-price_gap:,.0f}"
-            up_or_down = '📉'
-        elif price_gap > 0:
-            price_gap_str = f"+{price_gap:,.0f}"
-            up_or_down = '📈'
-        else:
-            price_gap_str = f"{price_gap:,.0f}"
-        
-        if prev_change < 0:
-            prev_change_str = f"-{-prev_change:.2f}%"
-        elif prev_change > 0:
-            prev_change_str = f"+{prev_change:.2f}%"
-        else:
-            prev_change_str = f"{prev_change:.2f}%"
-
-        if today_change < 0:
-            today_change_str = f"-{-today_change:.2f}%"
-        elif today_change > 0:
-            today_change_str = f"+{today_change:.2f}%"
-        else:
-            today_change_str = f"{today_change:.2f}%"
-        
-        msg = f"""# {self.stock_data[ticker][0]} : {up_or_down} {today_close:,.0f} ( {price_gap_str} | {today_change_str} )
-```markdown
-{self.stock_data[ticker][0]} ({ticker}) 가격정보
-날짜: {today_date:^10} || {prev_date}
-시가: {today_open:^10,.0f} || {prev_open:^10,.0f}
-종가: {today_close:^10,.0f} || {prev_close:^10,.0f}
-고가: {today_high:^10,.0f} || {prev_high:^10,.0f}
-저가: {today_low:^10,.0f} || {prev_low:^10,.0f}
-등락: {today_change_str:^10} || {prev_change_str:^10}
-거래량: {today_volume:^10,.0f} || {prev_volume:^10,.0f}
-```
-"""
-        return msg
     
 class Lotto:
     def get_latest_lotto_drw(self):
@@ -559,3 +447,6 @@ def get_game_key(game):
             return key
 
     return 'hsr'
+
+
+
