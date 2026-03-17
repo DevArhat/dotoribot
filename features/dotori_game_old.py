@@ -80,11 +80,7 @@ def dotori_game_commands(bot, bot_msg):
         if balance == 0:
             result_text += "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다...😱"
 
-        if player_has_item:
-            actual_bet = balance - fluctuation
-            display_price = f"{베팅:,}개 -> {actual_bet:,}개"
-        else:
-            display_price = f"{베팅:,}개"
+        display_price = f"{베팅:,}개 -> {abs(fluctuation):,}" if player_has_item else f"{베팅:,}"
 
         bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}, 주사위보유: {player_has_item}, 황금도토리보유: {has_golden_acorn}" )
         await bot_msg(ctx, f"""## {emoji} {result_text}
@@ -307,67 +303,11 @@ def dotori_game_commands(bot, bot_msg):
         successed_text = "성공" if sell_successed else "실패"
         user_balance = logic_result[1]
         logic_msg = logic_result[2]
-        penalty_triggered = logic_result[3]
 
         msg = f"[판매{successed_text}] " + logic_msg + f"\n[현재잔고] **{user_balance:,}**개"
-        if penalty_triggered:
-            msg = f"{bot.angry_koko} **사기 주사위를 통한 도토리 불법 복제가 적발되었습니다!**\n도토리의 절반을 벌금으로 냈습니다.\n{msg}"
 
-        bot.add_log(ctx, "/판매", f"{successed_text}, 아이템: {item_key} ({아이템}), 잔액: {user_balance:,}, 페널티: {penalty_triggered}")
+        bot.add_log(ctx, "/판매", f"{successed_text}, 아이템: {item_key} ({아이템}), 잔액: {user_balance:,}")
         await bot_msg(ctx, msg, ephemeral=not sell_successed)
-
-    class SellView(discord.ui.View):
-        def __init__(self, items_list):
-            super().__init__(timeout=60)
-            
-            options = []
-            for item_id in items_list:
-                item_name = game.ITEMS.get(item_id, {}).get("name", item_id)
-                options.append(discord.SelectOption(label=item_name, value=item_id))
-            
-            if not options:
-                self.stop()
-                return
-
-            self.select = discord.ui.Select(placeholder="판매할 아이템을 선택하세요", options=options)
-            self.select.callback = self.select_callback
-            self.add_item(self.select)
-
-        async def select_callback(self, interaction: discord.Interaction):
-            user_id = str(interaction.user.id)
-            item_key = self.select.values[0]
-            
-            logic_result = game.sell_item(user_id, item_key)
-            sell_successed = logic_result[0]
-            successed_text = "성공" if sell_successed else "실패"
-            user_balance = logic_result[1]
-            logic_msg = logic_result[2]
-            penalty_triggered = logic_result[3]
-
-            msg = f"[판매{successed_text}] " + logic_msg + f"\n[현재잔고] **{user_balance:,}**개"
-            if penalty_triggered:
-                msg = f"{bot.angry_koko} **사기 주사위를 통한 도토리 불법 복제가 적발되었습니다!**\n도토리의 절반을 벌금으로 냈습니다.\n{msg}"
-
-            bot.add_log(interaction, "/판매v2", f"{successed_text}, 아이템: {item_key}, 잔액: {user_balance:,}, 페널티: {penalty_triggered}")
-            
-            # 모든 버튼 비활성화
-            self.select.disabled = True
-            await interaction.response.edit_message(view=self)
-            await bot_msg(interaction, msg, ephemeral=not sell_successed)
-            self.stop()
-
-    @bot.hybrid_command(name="판매v2", description="보유 중인 아이템을 선택하여 판매합니다")
-    async def sell_item_v2(ctx):
-        user_id = str(ctx.author.id)
-        inventory_msg, items_list = game.get_inventory_by_userid(user_id)
-        
-        if not items_list:
-            await bot_msg(ctx, "판매할 아이템이 없습니다.", ephemeral=True)
-            return
-
-        view = SellView(items_list)
-        bot.add_log(ctx, "/판매v2")
-        await ctx.send("# 어떤 아이템을 판매하시겠습니까?\n" + inventory_msg, view=view, ephemeral=True)
 
 
 
@@ -434,12 +374,12 @@ def dotori_game_commands(bot, bot_msg):
 
             if result == "challenger_win":
                 msg = f"## ⚔️ {self.challenger.display_name} 승리!\n{self.challenger.mention}이(가) {self.opponent.mention}을(를) 이겼습니다!"
-                c_change = f"+{game.apply_win_fee(self.bet):,}"
+                c_change = f"+{self.bet:,}"
                 o_change = f"-{self.bet:,}"
             elif result == "opponent_win":
                 msg = f"## ⚔️ {self.opponent.display_name} 승리!\n{self.opponent.mention}이(가) {self.challenger.mention}을(를) 이겼습니다!"
                 c_change = f"-{self.bet:,}"
-                o_change = f"+{game.apply_win_fee(self.bet):,}"
+                o_change = f"+{self.bet:,}"
             else:
                 msg = f"## 🤝 무승부!\n{self.challenger.mention}과(와) {self.opponent.mention}의 결투가 무승부로 끝났습니다!"
                 c_change = "±0"

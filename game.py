@@ -6,6 +6,15 @@ import datetime
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GAME_DB_PATH = os.path.join(BASE_DIR, 'game_data.db')
 
+# 게임 승리 보상 비율 (10% 수수료 제외 후 90% 지급)
+WIN_REWARD_RATE = 0.9
+
+def apply_win_fee(profit: int) -> int:
+    """승리 시 얻는 순이익에서 수수료를 제외한 금액을 반환한다."""
+    if profit <= 0:
+        return profit
+    return int(profit * WIN_REWARD_RATE)
+
 # 아이템 정보 정의 (사전 형태로 관리하여 추후 확장이 용이하게 함)
 ITEMS = {
     "high_interest": {
@@ -16,7 +25,7 @@ ITEMS = {
     "cheat_dice": {
         "name": "사기 주사위",
         "price": 1000000,
-        "desc": "올인만 할 수 있으며, 승리/패배/무승부 확률이 60/25/15 %로 변경됩니다."
+        "desc": "올인만 할 수 있으며, 승리/패배/무승부 확률이 60/25/15 %로 변경됩니다. 판매 시 일정 확률로 도토리의 절반을 잃습니다."
     },
     "golden_acorn": {
         "name": "황금 도토리",
@@ -34,6 +43,43 @@ ITEMS = {
         "desc": "/돈많이줘 를 사용할 수 있습니다: 15,000,000개/1일"
     }
 }
+# ITEMS_TEMP = {
+#     "high_interest": {
+#         "name": "적금 통장",
+#         "price": 500000,
+#         "desc": "매일 자정(00시)마다 현재 잔액의 5%를 이자로 받습니다."
+#     },
+#     "cheat_dice": {
+#         "name": "사기 주사위",
+#         "price": 1000000,
+#         "desc": "올인만 할 수 있으며, 승리/패배/무승부 확률이 60/25/15 %로 변경됩니다. 판매 시 일정 확률로 도토리의 절반을 잃습니다."
+#     },
+#     "golden_acorn": {
+#         "name": "황금 도토리",
+#         "price": 1500000,
+#         "desc": "승/무/패 확률 35/20/45, 승리 시 0.5% 확률로 베팅 금액의 30배를 획득합니다."
+#     },
+#     "chicken_dice": {
+#         "name": "겁쟁이 주사위",
+#         "price": 1500000,
+#         "desc": "승/무/패 확률 60/10/30, 승리 시 베팅 금액의 40%만 획득합니다."
+#     },
+#     "beast_heart": {
+#         "name": "야수의 심장",
+#         "price": 1500000,
+#         "desc": "승/무/패 확률 20/10/70, 매 승리 시마다 베팅 금액의 3배를 획득합니다."
+#     },
+#     "strong_acorn": {
+#         "name": "돈줘 강화",
+#         "price": 2000000,
+#         "desc": "/돈줘 금액이 2배 증가합니다."
+#     },
+#     "acorn_loan": {
+#         "name": "땡겨쓰기",
+#         "price": 3000000,
+#         "desc": "/돈많이줘 를 사용할 수 있습니다: 15,000,000개/1일"
+#     }
+# }
 
 def _get_connection():
     """DB 커넥션을 반환한다."""
@@ -141,11 +187,11 @@ def get_cooldown_info(user_id: str) -> tuple:
     return (False, available_at_kst)
 
 def give_money(user_id: str) -> tuple:
-    """유저에게 100000원(강화 시 200000원)을 지급한다. (5분 쿨타임)"""
-    amount = 100000
+    """유저에게 500000원(강화 시 1000000원)을 지급한다. (5분 쿨타임)"""
+    amount = 500000
     is_strong = has_item(user_id, "strong_acorn")
     if is_strong:
-        amount = 200000
+        amount = 1000000
         
     cooldown_seconds = 300  # 5분
 
@@ -337,30 +383,52 @@ def buy_item(user_id: str, item_id: str) -> tuple:
 def sell_item(user_id: str, item_id: str) -> tuple:
     """
     유저가 보유 중인 아이템을 판매한다. 구매가의 60%를 환급한다.
+    '사기 주사위'("cheat_dice") 판매 시 일정 확률로 보유 도토리의 절반을 잃음.
 
     Returns:
-        (True, 잔액, 메시지) - 판매 성공
-        (False, 잔액, 메시지) - 판매 실패 (아이템 미보유 등)
+        (True, 잔액, 메시지, penalty_triggered) - 판매 성공
+        (False, 잔액, 메시지, False) - 판매 실패 (아이템 미보유 등)
     """
     if item_id not in ITEMS:
-        return (False, get_balance(user_id), "존재하지 않는 아이템입니다.")
+        return (False, get_balance(user_id), "존재하지 않는 아이템입니다.", False)
 
     if not has_item(user_id, item_id):
-        return (False, get_balance(user_id), f"'{ITEMS[item_id]['name']}'을(를) 보유하고 있지 않습니다.")
+        return (False, get_balance(user_id), f"'{ITEMS[item_id]['name']}'을(를) 보유하고 있지 않습니다.", False)
 
     item_price = ITEMS[item_id]["price"]
     refund = int(item_price * 0.6)
+    penalty_triggered = False
 
     conn = _get_connection()
     cursor = conn.cursor()
 
     # 1. 인벤토리에서 아이템 제거
     cursor.execute("DELETE FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
-    # 2. 잔액 환급
+    
+    # 2. 잔액 환급 (기본)
     cursor.execute(
         "INSERT INTO money (user_id, current_amount) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET current_amount = current_amount + ?",
         (user_id, refund, refund)
     )
+
+    # 3. 사기 주사위 페널티 확인
+    if item_id == "cheat_dice":
+        cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+        balance_after_refund = cursor.fetchone()[0]
+        
+        # 기본 확률 5%
+        penalty_prob = 5
+        if balance_after_refund > 1000000000:
+            extra_prob = (balance_after_refund - 1000000000) // 50000000
+            penalty_prob += extra_prob
+        
+        penalty_prob = min(penalty_prob, 60)
+        
+        if random.randint(1, 100) <= penalty_prob:
+            penalty_triggered = True
+            penalty_amount = balance_after_refund // 2
+            cursor.execute("UPDATE money SET current_amount = current_amount - ? WHERE user_id = ?", (penalty_amount, user_id))
+            cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, -penalty_amount))
 
     cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
     new_balance = cursor.fetchone()[0]
@@ -368,7 +436,8 @@ def sell_item(user_id: str, item_id: str) -> tuple:
     conn.commit()
     conn.close()
 
-    return (True, new_balance, f"'{ITEMS[item_id]['name']}'을(를) **{refund:,}개**에 판매했습니다! (구매가의 60%)")
+    msg = f"'{ITEMS[item_id]['name']}'을(를) **{refund:,}개**에 판매했습니다! (구매가의 60%)"
+    return (True, new_balance, msg, penalty_triggered)
 
 
 def claim_interest(user_id: str) -> tuple:
@@ -543,13 +612,13 @@ def duel(challenger_id: str, opponent_id: str, bet: int) -> tuple:
     
     if roll < 0.45:
         result = "challenger_win"
-        c_change = bet
+        c_change = apply_win_fee(bet)
         o_change = -bet
         duel_result_code = "A"
     elif roll < 0.90:
         result = "opponent_win"
         c_change = -bet
-        o_change = bet
+        o_change = apply_win_fee(bet)
         duel_result_code = "B"
     else:
         result = "draw"
@@ -649,6 +718,9 @@ def play_game(user_id: str, bet: int) -> tuple:
 
     if "win_jackpot" in result:
         fluctuation *= 30
+        
+    if "win" in result and fluctuation > 0:
+        fluctuation = apply_win_fee(fluctuation)
 
     conn = _get_connection()
     cursor = conn.cursor()
@@ -731,6 +803,9 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
         if "win_jackpot" in result:
             fluctuation *= 30
             jackpot_count += 1
+            
+        if "win" in result and fluctuation > 0:
+            fluctuation = apply_win_fee(fluctuation)
 
         if "win" in result:
             wins += 1
