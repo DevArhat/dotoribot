@@ -3,7 +3,7 @@
 __pycache__/
 *.env
 test*
-bot.log
+*.log
 time_table.json
 !test.py
 test/
