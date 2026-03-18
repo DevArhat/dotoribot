@@ -7,16 +7,16 @@ import random
 
 sc = SpaceController()
 
-def dotori_game_commands(bot, bot_msg):
+def dotori_game_commands(bot, bot_msg, bot_defer):
 
-    @bot.hybrid_command(name="돈줘", description="도토리 500만개를 지급받습니다 (5분 쿨타임)")
+    @bot.hybrid_command(name="돈줘", description="도토리 50만개를 지급받습니다 (5분 쿨타임)")
     async def give_money(ctx):
         user_id = str(ctx.author.id)
         success, value, is_strong = game.give_money(user_id)
 
         if success:
             effect_text = "\n💪 **돈줘 강화** 효과 적용됨! (2배 지급)" if is_strong else ""
-            amount_text = "10,000,000" if is_strong else "5,000,000"
+            amount_text = "1,000,000" if is_strong else "500,000"
             
             bot.add_log(ctx, "/돈줘", f"지급 후 잔액: {value:,}")
             await bot_msg(ctx, f"💰 도토리 {amount_text}개가 지급되었습니다!{effect_text}\n🏦 현재 도토리: **{value:,}개**")
@@ -35,14 +35,14 @@ def dotori_game_commands(bot, bot_msg):
             bot.add_log(ctx, "/돈줘", f"쿨타임 중 ({time_text})")
             await bot_msg(ctx, f"{bot.angry_koko} 탕진좀 그만해!\n**{time_text}**에 줄게요.", ephemeral=True)
 
-    @bot.hybrid_command(name="돈많이줘", description="도토리 150,000,000개를 땡겨씁니다 (아이템 필요, 1일 1회)")
+    @bot.hybrid_command(name="돈많이줘", description="도토리 15,000,000개를 땡겨씁니다 (아이템 필요, 1일 1회)")
     async def give_money_loan(ctx):
         user_id = str(ctx.author.id)
         success, new_balance, msg = game.give_money_loan(user_id)
         
         if success:
             bot.add_log(ctx, "/돈많이줘", f"지급 후 잔액: {new_balance:,}")
-            await bot_msg(ctx, f"💸 **150,000,000개** 땡겨쓰기 완료!\n🏦 현재 도토리: **{new_balance:,}개**")
+            await bot_msg(ctx, f"💸 **15,000,000개** 땡겨쓰기 완료!\n🏦 현재 도토리: **{new_balance:,}개**")
         else:
             bot.add_log(ctx, "/돈많이줘", f"실패 사유: {msg}")
             await bot_msg(ctx, f"❌ {msg}", ephemeral=True)
@@ -156,7 +156,7 @@ def dotori_game_commands(bot, bot_msg):
     
     @bot.hybrid_command(name="랭킹", description="도토리 보유 랭킹")
     async def ranking(ctx):
-        await ctx.defer()
+        await bot_defer(ctx)
         rows = game.get_ranking(10)
         if not rows:
             await bot_msg(ctx, "아직 아무도 도토리를 가지고 있지 않아요!")

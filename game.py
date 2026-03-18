@@ -67,7 +67,7 @@ ITEMS = {
     "beast_heart": {
         "name": "야수의 심장",
         "price": 1500000,
-        "desc": "승리확률 -10%p, 패배확률 +10%p, 매 승리 시마다 베팅 금액의 3배를 획득합니다."
+        "desc": "승리확률 -15%p, 패배확률 +15%p, 매 승리 시마다 베팅 금액의 3배를 획득합니다."
     },
     "strong_acorn": {
         "name": "돈줘 강화",
@@ -215,12 +215,12 @@ def get_cooldown_info(user_id: str) -> tuple:
     return (False, available_at_kst)
 
 def give_money(user_id: str) -> tuple:
-    """유저에게 5000000원(강화 시 10000000원)을 지급한다. (5분 쿨타임)"""
-    amount = 5000000
+    """유저에게 500000원(강화 시 1000000원)을 지급한다. (5분 쿨타임)"""
+    amount = 500000
     is_strong = has_item(user_id, "strong_acorn")
     if is_strong:
-        amount = 10000000
-        
+        amount = 1000000
+    
     cooldown_seconds = 300  # 5분
 
     conn = _get_connection()
@@ -317,7 +317,7 @@ def has_item(user_id: str, item_id: str) -> bool:
 
 def give_money_loan(user_id: str) -> tuple:
     """
-    '땡겨쓰기' 아이템 보유 시 하루 한 번 150,000,000원을 지급한다.
+    '땡겨쓰기' 아이템 보유 시 하루 한 번 15,000,000원을 지급한다.
     
     Returns:
         (True, 잔액, 메시지) - 대출 성공
@@ -326,7 +326,7 @@ def give_money_loan(user_id: str) -> tuple:
     if not has_item(user_id, "acorn_loan"):
         return (False, 0, "땡겨쓰기 아이템이 필요합니다.")
         
-    amount = 150000000
+    amount = 15000000
     # KST 기준 날짜 구하기
     KST = datetime.timezone(datetime.timedelta(hours=9))
     now_kst = datetime.datetime.now(KST)
@@ -912,8 +912,8 @@ def _game_roll(owned_items: set):
         win_mod += 10
         lose_mod -= 10
     if "beast_heart" in owned_items:
-        win_mod -= 10
-        lose_mod += 10
+        win_mod -= 15
+        lose_mod += 15
 
     final_win = max(0, base_win + win_mod)
     final_lose = max(0, base_lose + lose_mod)
@@ -982,7 +982,7 @@ class StarForce:
             return 0
         
         _, _, denominator, power = self.star_data[S]
-        raw_cost = 1000 + ((self.L ** 3) * ((S + 1) ** power)) / denominator
+        raw_cost = (1000 + ((self.L ** 3) * ((S + 1) ** power)) / denominator)/10
         return int(round(raw_cost, -2))
 
     def attempt_enhancement(self, use_protection=False):

@@ -25,12 +25,19 @@ class DotoriBot(commands.Bot):
         self.angry_koko = os.getenv('ANGRY_KOKO')
         if is_test:
             self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID_TEST')))
+            self.NOTICE_CHANNEL_ID = int(str(os.getenv('DOTORI_NOTICE_CHANNEL_ID_TEST')))
+            self.NOTICE_TARGET_ID = int(str(os.getenv('DOTORI_NOTICE_TARGET_ID_TEST')))
         else:
             self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID')))
-        
+            self.NOTICE_CHANNEL_ID = int(str(os.getenv('DOTORI_NOTICE_CHANNEL_ID')))
+            self.NOTICE_TARGET_ID = int(str(os.getenv('DOTORI_NOTICE_TARGET_ID')))
     async def setup_hook(self):
         await self.tree.sync()  # 슬래시 명령어 동기화
+
+
 load_dotenv()
+
+
 
 def build_bot(is_test, logger_func):        
     bot = DotoriBot(is_test, logger_func)
@@ -40,23 +47,57 @@ def build_bot(is_test, logger_func):
 
     # 응답 메시지 발송 공통 함수
     async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
-        if isinstance(ctx, discord.Interaction):
-            # @bot.tree.command 등에서 Interaction 객체가 직접 들어온 경우
-            if ctx.response.is_done():
-                return await ctx.followup.send(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+        # content가 비어있거나 "DEFER"일 때 기본 문구 설정
+        if not content or content == "DEFER":
+            content = "🐿️ 잠시만요! 생각 좀 해볼게요."
+
+        # 1. Interaction 기반
+        inter = ctx if isinstance(ctx, discord.Interaction) else getattr(ctx, 'interaction', None)
+        
+        if inter:
+            if inter.response.is_done():
+                try:
+                    # 이미 응답
+                    return await inter.edit_original_response(content=content, embed=embed)
+                except Exception:
+                    # 수정이 불가능한 예외 상황
+                    return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
             else:
-                await ctx.response.send_message(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
-                return await ctx.original_response()
-        elif ctx.interaction:
-            # hybrid_command를 통해 슬래시 명령어로 들어온 Context인 경우
-            # Context.send는 내부적으로 interaction.response를 처리해줍니다.
-            return await ctx.send(content=content, embed=embed, stickers=stickers, ephemeral=ephemeral)
+                # 일반 응답
+                await inter.response.send_message(content=content, embed=embed, ephemeral=ephemeral)
+                return await inter.original_response()
+
+        # 2. 일반 메시지 명령어 (!명령어)
         else:
-            # 일반 메시지 명령어(!명령어)로 들어온 Context인 경우
-            return await ctx.message.reply(content=content, embed=embed, stickers=stickers)        
+            # 이전에 보낸 메시지가 있다면 수정, 없으면 새로 답장
+            last_msg = getattr(ctx, "_last_bot_msg", None)
+            if last_msg:
+                try:
+                    return await last_msg.edit(content=content, embed=embed)
+                except Exception:
+                    # 메시지가 삭제되었을 경우 새로 발송
+                    msg = await ctx.message.reply(content=content, embed=embed, stickers=stickers)
+                    ctx._last_bot_msg = msg
+                    return msg
+            else:
+                msg = await ctx.message.reply(content=content, embed=embed, stickers=stickers)
+                ctx._last_bot_msg = msg
+                return msg
+    
+    # Defer 통합 래퍼
+    async def bot_defer(ctx, ephemeral=False):
+        # Slash Command의 경우 discord.py의 defer 실행 (ephemeral 연동)
+        if isinstance(ctx, discord.Interaction) or getattr(ctx, 'interaction', None):
+            await ctx.defer(ephemeral=ephemeral)
+        else:
+            # 일반 메시지의 경우 '입력 중...' 상태 표시
+            await ctx.typing()
+            
+        # 공통 로딩 문구 출력
+        await bot_msg(ctx, "DEFER", ephemeral=ephemeral)
 
     # commands 내부의 명령어 등록
-    load_all_commands(bot, bot_msg)
+    load_all_commands(bot, bot_msg, bot_defer)
 
 
 
@@ -72,8 +113,12 @@ def build_bot(is_test, logger_func):
         print('--- 봇이 정상적으로 작동 중입니다 ---')
 
 
-
-
+    @bot.hybrid_command(name="저메추")
+    async def recommend_dinner(ctx):
+        dinners = os.getenv('DINNER_MENUS').split(',')
+        menu = random.choice(dinners)
+        bot.add_log(ctx, "/저메추", f"{menu}")
+        await bot_msg(ctx, f"# {menu}")
 
 
     @bot.hybrid_command(name="사용법")
@@ -155,17 +200,18 @@ def build_bot(is_test, logger_func):
         bot.add_log(ctx, "/빠직")
         await bot_msg(ctx, f"{bot.angry_koko}")
 
-    @bot.hybrid_command(name="저메추")
-    async def dinner_reccomend(ctx):
-        dinners = os.getenv('DINNER_MENUS').split(',')
-        dinner = random.choice(dinners)
-        bot.add_log(ctx, "/저메추", f"{dinner}")
-        await bot_msg(ctx, f"{dinner}")
+
 
     @bot.hybrid_command(name="시트", description="도토리 레이드 시트 링크")
     async def send_sheet_link(ctx):
         bot.add_log(ctx, "/시트")
         await bot_msg(ctx, f"# [도토리 레이드 시트]({os.getenv('DOTORI_RAID_SHEET')})")
+
+    @bot.hybrid_command(name="시간표", description="시간표 쓰러 가기")
+    async def show_time_table_link(ctx):
+        sheet_link = show_sheet_link_for_individuals(ctx)
+        bot.add_log(ctx, "/시간표", f"{sheet_link}")
+        await bot_msg(ctx, f"# [시간표 바로가기]({sheet_link})")
         
     @bot.hybrid_command(name="지옥효율", description="지옥 효율 계산 링크")
     async def send_hell_efficiency_link(ctx):
@@ -218,7 +264,7 @@ def build_bot(is_test, logger_func):
                 captain_jack = f.read()
             bot.add_log(ctx, "/캡틴잭")
         except FileNotFoundError:
-            captain_jack = "이런! 캡틴잭이 제 저장장치를 부숴버렸어요!"
+            captain_jack = "이런! 캡틴잭이 적룡포로 제 저장장치를 부숴버렸어요!"
             bot.add_log(ctx, "/캡틴잭", "[오류] FileNotFoundError")
             
         await bot_msg(ctx, content=captain_jack)
@@ -296,7 +342,7 @@ def build_bot(is_test, logger_func):
         error_type = type(error).__name__
 
         # 1. 모든 함수에 대해 전역 오류 핸들러로 동작
-        await bot_msg(ctx, "👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        await bot_msg(ctx, content="👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
         bot.add_log(ctx,f"/{command_name}", f"오류 발생 함수: {command_name}, 오류 타입: {error_type}, 오류 내용: {str(error)}")
         
         # 2. 오류가 발생한 함수와 발생 오류 타입을 print

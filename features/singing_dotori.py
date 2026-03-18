@@ -8,7 +8,7 @@ from logic import SpaceController, RhythmDotori
 sc = SpaceController()
 rd = RhythmDotori()
 
-def singing_dotori_commands(bot, bot_msg):
+def singing_dotori_commands(bot, bot_msg, bot_defer):
     music_queues = {}
     inactive_timers = {}
 
@@ -54,8 +54,7 @@ def singing_dotori_commands(bot, bot_msg):
         url="유튜브 URL. 검색어도 되는데 검색결과가 부정확할 때가 있어요"
     )
     async def play_music(ctx, url: str):
-        await ctx.defer()
-        
+        await bot_defer(ctx)
         if not ctx.author.voice:
             await bot_msg(ctx, "어느 채널로 가야되는지 모르겠어! 😱")
             return
@@ -67,7 +66,7 @@ def singing_dotori_commands(bot, bot_msg):
         else:
             await voice_client.move_to(channel)
 
-        msg = await bot_msg(ctx, "노래 외우는 중.. 잠시만 기다려주세요...")
+        msg = await bot_msg(ctx, "🐿️ 노래 외우는 중.. 잠시만 기다려주세요...")
 
         # 3. yt-dlp로 스트리밍 URL 추출 (비동기 처리로 봇 멈춤 방지)
         try:
