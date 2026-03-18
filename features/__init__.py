@@ -7,17 +7,13 @@ from features.kakao_map_utils import kakao_map_utils_commands
 
 
 __all__ = [
-    "dotori_game_commands",
-    "singing_dotori_commands",
-    "lostark_utils_commands",
-    "show_stock_commands",
-    "load_all_commands",
-    "kakao_map_utils_commands"
+    "load_all_commands"
 ]
 
 def load_all_commands(bot, bot_msg, bot_defer):
-    dotori_game_commands(bot, bot_msg, bot_defer)
-    singing_dotori_commands(bot, bot_msg, bot_defer)
-    lostark_utils_commands(bot, bot_msg, bot_defer)
-    show_stock_commands(bot, bot_msg, bot_defer)
-    kakao_map_utils_commands(bot, bot_msg, bot_defer)
+    bot_func = (bot, bot_msg, bot_defer)
+    dotori_game_commands(*bot_func)
+    singing_dotori_commands(*bot_func)
+    lostark_utils_commands(*bot_func)
+    show_stock_commands(*bot_func)
+    kakao_map_utils_commands(*bot_func)

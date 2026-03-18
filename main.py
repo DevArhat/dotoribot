@@ -64,8 +64,24 @@ def build_bot(is_test, logger_func):
                     return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
             else:
                 # 일반 응답
-                await inter.response.send_message(content=content, embed=embed, ephemeral=ephemeral)
-                return await inter.original_response()
+                try:
+                    await inter.response.send_message(content=content, embed=embed, ephemeral=ephemeral)
+                    return await inter.original_response()
+                except (discord.InteractionResponded, discord.NotFound, discord.HTTPException):
+                    # 이미 응답되었거나 만료된 경우 followup 또는 edit_original_response 시도
+                    try:
+                        if inter.response.is_done():
+                            return await inter.edit_original_response(content=content, embed=embed)
+                        else:
+                            return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
+                    except Exception:
+                        # 최후의 수단: 가능한 경우 채널에 직접 메시지
+                        if hasattr(ctx, 'send'):
+                            try:
+                                return await ctx.send(content=content, embed=embed)
+                            except:
+                                pass
+                        return None
 
         # 2. 일반 메시지 명령어 (!명령어)
         else:
@@ -342,7 +358,11 @@ def build_bot(is_test, logger_func):
         error_type = type(error).__name__
 
         # 1. 모든 함수에 대해 전역 오류 핸들러로 동작
-        await bot_msg(ctx, content="👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        try:
+            await bot_msg(ctx, content="👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        except Exception as e:
+            print(f"Error while sending error message: {e}")
+
         bot.add_log(ctx,f"/{command_name}", f"오류 발생 함수: {command_name}, 오류 타입: {error_type}, 오류 내용: {str(error)}")
         
         # 2. 오류가 발생한 함수와 발생 오류 타입을 print
