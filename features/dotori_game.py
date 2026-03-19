@@ -37,14 +37,14 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
             bot.add_log(ctx, "/돈줘", f"쿨타임 중 ({time_text})")
             await bot_msg(ctx, f"{bot.angry_koko} 탕진좀 그만해!\n**{time_text}**에 줄게요.", ephemeral=True)
 
-    @bot.hybrid_command(name="돈많이줘", description="도토리 15,000,000개를 땡겨씁니다 (아이템 필요, 1일 1회)")
+    @bot.hybrid_command(name="돈많이줘", description="도토리 150,000,000개를 땡겨씁니다 (아이템 필요, 1일 1회)")
     async def give_money_loan(ctx):
         user_id = str(ctx.author.id)
         success, new_balance, msg = game.give_money_loan(user_id)
         
         if success:
             bot.add_log(ctx, "/돈많이줘", f"지급 후 잔액: {new_balance:,}")
-            await bot_msg(ctx, f"💸 **15,000,000개** 땡겨쓰기 완료!\n🏦 현재 도토리: **{new_balance:,}개**")
+            await bot_msg(ctx, f"💸 **150,000,000개** 땡겨쓰기 완료!\n🏦 현재 도토리: **{new_balance:,}개**")
         else:
             bot.add_log(ctx, "/돈많이줘", f"실패 사유: {msg}")
             await bot_msg(ctx, f"❌ {msg}", ephemeral=True)

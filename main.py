@@ -225,7 +225,12 @@ def build_bot(is_test, logger_func):
         bot.add_log(ctx, "/빠직")
         await bot_msg(ctx, f"{bot.angry_koko}")
 
-
+    @bot.hybrid_command(name="저메추")
+    async def dinner_reccomend(ctx):
+        dinners = os.getenv('DINNER_MENUS').split(',')
+        dinner = random.choice(dinners)
+        bot.add_log(ctx, "/저메추", f"{dinner}")
+        await bot_msg(ctx, f"{dinner}")
 
     @bot.hybrid_command(name="시트", description="도토리 레이드 시트 링크")
     async def send_sheet_link(ctx):

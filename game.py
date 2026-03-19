@@ -317,7 +317,7 @@ def has_item(user_id: str, item_id: str) -> bool:
 
 def give_money_loan(user_id: str) -> tuple:
     """
-    '땡겨쓰기' 아이템 보유 시 하루 한 번 15,000,000원을 지급한다.
+    '땡겨쓰기' 아이템 보유 시 하루 한 번 150,000,000원을 지급한다.
     
     Returns:
         (True, 잔액, 메시지) - 대출 성공
@@ -326,7 +326,7 @@ def give_money_loan(user_id: str) -> tuple:
     if not has_item(user_id, "acorn_loan"):
         return (False, 0, "땡겨쓰기 아이템이 필요합니다.")
         
-    amount = 15000000
+    amount = 150000000
     # KST 기준 날짜 구하기
     KST = datetime.timezone(datetime.timedelta(hours=9))
     now_kst = datetime.datetime.now(KST)
