@@ -1,7 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from logic import SpaceController, LostArkGuardian, calc_logic, calc_logic_v2
+
+from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
 
 sc = SpaceController()
 

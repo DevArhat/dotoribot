@@ -1,9 +1,10 @@
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-import os
-import aiohttp
 from dotenv import load_dotenv
+
+import os
 
 from logic import SpaceController
 

@@ -1,8 +1,10 @@
-from logic import SpaceController, StockInfoWithSqlite
 import discord
-import os
 from discord import app_commands
 from discord.ext import commands
+
+import os
+
+from logic import SpaceController, StockInfoWithSqlite
 
 sc = SpaceController()
 st = StockInfoWithSqlite()

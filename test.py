@@ -1,7 +1,9 @@
-import os
 from dotenv import load_dotenv
-from main import bot_run
+
+import os
+
 from logic import add_test_log
+from main import bot_run
 
 load_dotenv()
 

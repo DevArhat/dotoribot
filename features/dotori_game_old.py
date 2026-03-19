@@ -1,9 +1,12 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+import datetime as dt
+import random
+
 import game
 from logic import SpaceController
-import random
 
 sc = SpaceController()
 
@@ -21,7 +24,6 @@ def dotori_game_commands(bot, bot_msg):
             bot.add_log(ctx, "/돈줘", f"지급 후 잔액: {value:,}")
             await bot_msg(ctx, f"💰 도토리 {amount_text}개가 지급되었습니다!{effect_text}\n🏦 현재 도토리: **{value:,}개**")
         else:
-            import datetime as dt
             KST = dt.timezone(dt.timedelta(hours=9))
             now_kst = dt.datetime.now(KST)
             _, available_at = game.get_cooldown_info(user_id)

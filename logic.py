@@ -1,12 +1,13 @@
+import FinanceDataReader as fdr
+import requests
+import yt_dlp
+
 import datetime
+import json
 import math
 import os
-import json
 import re
 import sqlite3
-import FinanceDataReader as fdr
-import yt_dlp, ffmpeg
-import requests
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, 'bot.log')

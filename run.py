@@ -1,10 +1,12 @@
 # tmux new -s bot
 # tmux attach -t bot
 
-import os
 from dotenv import load_dotenv
-from main import bot_run
+
+import os
+
 from logic import add_log
+from main import bot_run
 
 load_dotenv()
 

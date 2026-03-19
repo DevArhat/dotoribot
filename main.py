@@ -1,17 +1,19 @@
 # tmux new -s bot
 # tmux attach -t bot
 
-import random
-import os
-
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from features import *
 
-from logic import *
+import datetime
+import os
+import random
+
+import dotori_stock_core
 import game
+from features import *
+from logic import *
 
 class DotoriBot(commands.Bot):
 
@@ -44,6 +46,7 @@ def build_bot(is_test, logger_func):
     sc = SpaceController()
 
     game.init_db()
+    dotori_stock_core.init_stock_db()
 
     # 응답 메시지 발송 공통 함수
     async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
@@ -121,6 +124,7 @@ def build_bot(is_test, logger_func):
     async def on_ready():
         try:            
             midnight_interest_job.start()
+            tuesday_notice_job.start()
             synced = await bot.tree.sync()
             print(f'{len(synced)}개의 명령어')  # type: ignore
         except Exception as e:
@@ -183,6 +187,11 @@ def build_bot(is_test, logger_func):
 # 주식
 /주식 [티커 번호 or 회사명]
 ㄴ 주가 보기 (KOSPI만 지원, ETF 일부 가능, 티커번호 권장)
+
+# 주식 모의투자
+/주식구매 [종목] [수량] : 주식 구매 (1원 = 1도토리)
+/주식판매 [종목] [수량] : 주식 판매
+/내주식 : 보유 주식 및 수익률 확인
 
 # 로또
 /로또추천 : 로또 번호 랜덤 추천
@@ -349,6 +358,19 @@ def build_bot(is_test, logger_func):
         count = game.claim_interest_for_all()
         bot.add_log(bot.user, "/적금통장", f"{count}명 이자 지급 완료")
         print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다. @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+    @tasks.loop(time=datetime.time(hour=22, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
+    async def tuesday_notice_job():
+        tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(tz_kst)
+        # 1은 화요일 (0: 월, 1: 화, ...)
+        if now.weekday() == 1:
+            channel = bot.get_channel(bot.NOTICE_CHANNEL_ID)
+            if channel:
+                bot.add_log(bot.user, "/주간시간표", "화요일 공지 발송 완료")
+                await channel.send(f"<@&{bot.NOTICE_TARGET_ID}>\n시간표를쓰지않으면 -> ☠️ 🗡️ 🐸\n[시간표 쓰러가기]({os.getenv('DOTORI_TIME_TABLE')})")
+                print(f"화요일 공지 발송 완료! @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
     @bot.event

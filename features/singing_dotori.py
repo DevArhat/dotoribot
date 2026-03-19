@@ -1,9 +1,11 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+
 import asyncio
 import datetime
-from logic import SpaceController, RhythmDotori
+
+from logic import RhythmDotori, SpaceController
 
 sc = SpaceController()
 rd = RhythmDotori()
