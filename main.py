@@ -1,17 +1,19 @@
 # tmux new -s bot
 # tmux attach -t bot
 
-import random
-import os
-
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from features import *
 
-from logic import *
+import datetime
+import os
+import random
+
+import dotori_stock_core
 import game
+from features import *
+from logic import *
 
 class DotoriBot(commands.Bot):
 
@@ -25,38 +27,96 @@ class DotoriBot(commands.Bot):
         self.angry_koko = os.getenv('ANGRY_KOKO')
         if is_test:
             self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID_TEST')))
+            self.NOTICE_CHANNEL_ID = int(str(os.getenv('DOTORI_NOTICE_CHANNEL_ID_TEST')))
+            self.NOTICE_TARGET_ID = int(str(os.getenv('DOTORI_NOTICE_TARGET_ID_TEST')))
         else:
             self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID')))
-        
+            self.NOTICE_CHANNEL_ID = int(str(os.getenv('DOTORI_NOTICE_CHANNEL_ID')))
+            self.NOTICE_TARGET_ID = int(str(os.getenv('DOTORI_NOTICE_TARGET_ID')))
     async def setup_hook(self):
         await self.tree.sync()  # 슬래시 명령어 동기화
+
+
 load_dotenv()
+
+
 
 def build_bot(is_test, logger_func):        
     bot = DotoriBot(is_test, logger_func)
     sc = SpaceController()
 
     game.init_db()
+    dotori_stock_core.init_stock_db()
 
     # 응답 메시지 발송 공통 함수
     async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
-        if isinstance(ctx, discord.Interaction):
-            # @bot.tree.command 등에서 Interaction 객체가 직접 들어온 경우
-            if ctx.response.is_done():
-                return await ctx.followup.send(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
+        # content가 비어있거나 "DEFER"일 때 기본 문구 설정
+        if not content or content == "DEFER":
+            content = "🐿️ 잠시만요! 생각 좀 해볼게요."
+
+        # 1. Interaction 기반
+        inter = ctx if isinstance(ctx, discord.Interaction) else getattr(ctx, 'interaction', None)
+        
+        if inter:
+            if inter.response.is_done():
+                try:
+                    # 이미 응답
+                    return await inter.edit_original_response(content=content, embed=embed)
+                except Exception:
+                    # 수정이 불가능한 예외 상황
+                    return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
             else:
-                await ctx.response.send_message(content=content, embed=embed, ephemeral=ephemeral) # type: ignore
-                return await ctx.original_response()
-        elif ctx.interaction:
-            # hybrid_command를 통해 슬래시 명령어로 들어온 Context인 경우
-            # Context.send는 내부적으로 interaction.response를 처리해줍니다.
-            return await ctx.send(content=content, embed=embed, stickers=stickers, ephemeral=ephemeral)
+                # 일반 응답
+                try:
+                    await inter.response.send_message(content=content, embed=embed, ephemeral=ephemeral)
+                    return await inter.original_response()
+                except (discord.InteractionResponded, discord.NotFound, discord.HTTPException):
+                    # 이미 응답되었거나 만료된 경우 followup 또는 edit_original_response 시도
+                    try:
+                        if inter.response.is_done():
+                            return await inter.edit_original_response(content=content, embed=embed)
+                        else:
+                            return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
+                    except Exception:
+                        # 최후의 수단: 가능한 경우 채널에 직접 메시지
+                        if hasattr(ctx, 'send'):
+                            try:
+                                return await ctx.send(content=content, embed=embed)
+                            except:
+                                pass
+                        return None
+
+        # 2. 일반 메시지 명령어 (!명령어)
         else:
-            # 일반 메시지 명령어(!명령어)로 들어온 Context인 경우
-            return await ctx.message.reply(content=content, embed=embed, stickers=stickers)        
+            # 이전에 보낸 메시지가 있다면 수정, 없으면 새로 답장
+            last_msg = getattr(ctx, "_last_bot_msg", None)
+            if last_msg:
+                try:
+                    return await last_msg.edit(content=content, embed=embed)
+                except Exception:
+                    # 메시지가 삭제되었을 경우 새로 발송
+                    msg = await ctx.message.reply(content=content, embed=embed, stickers=stickers)
+                    ctx._last_bot_msg = msg
+                    return msg
+            else:
+                msg = await ctx.message.reply(content=content, embed=embed, stickers=stickers)
+                ctx._last_bot_msg = msg
+                return msg
+    
+    # Defer 통합 래퍼
+    async def bot_defer(ctx, ephemeral=False):
+        # Slash Command의 경우 discord.py의 defer 실행 (ephemeral 연동)
+        if isinstance(ctx, discord.Interaction) or getattr(ctx, 'interaction', None):
+            await ctx.defer(ephemeral=ephemeral)
+        else:
+            # 일반 메시지의 경우 '입력 중...' 상태 표시
+            await ctx.typing()
+            
+        # 공통 로딩 문구 출력
+        await bot_msg(ctx, "DEFER", ephemeral=ephemeral)
 
     # commands 내부의 명령어 등록
-    load_all_commands(bot, bot_msg)
+    load_all_commands(bot, bot_msg, bot_defer)
 
 
 
@@ -64,6 +124,7 @@ def build_bot(is_test, logger_func):
     async def on_ready():
         try:            
             midnight_interest_job.start()
+            tuesday_notice_job.start()
             synced = await bot.tree.sync()
             print(f'{len(synced)}개의 명령어')  # type: ignore
         except Exception as e:
@@ -72,8 +133,12 @@ def build_bot(is_test, logger_func):
         print('--- 봇이 정상적으로 작동 중입니다 ---')
 
 
-
-
+    @bot.hybrid_command(name="저메추")
+    async def recommend_dinner(ctx):
+        dinners = os.getenv('DINNER_MENUS').split(',')
+        menu = random.choice(dinners)
+        bot.add_log(ctx, "/저메추", f"{menu}")
+        await bot_msg(ctx, f"# {menu}")
 
 
     @bot.hybrid_command(name="사용법")
@@ -123,6 +188,11 @@ def build_bot(is_test, logger_func):
 /주식 [티커 번호 or 회사명]
 ㄴ 주가 보기 (KOSPI만 지원, ETF 일부 가능, 티커번호 권장)
 
+# 주식 모의투자
+/주식구매 [종목] [수량] : 주식 구매 (1원 = 1도토리)
+/주식판매 [종목] [수량] : 주식 판매
+/내주식 : 보유 주식 및 수익률 확인
+
 # 로또
 /로또추천 : 로또 번호 랜덤 추천
 
@@ -166,6 +236,12 @@ def build_bot(is_test, logger_func):
     async def send_sheet_link(ctx):
         bot.add_log(ctx, "/시트")
         await bot_msg(ctx, f"# [도토리 레이드 시트]({os.getenv('DOTORI_RAID_SHEET')})")
+
+    @bot.hybrid_command(name="시간표", description="시간표 쓰러 가기")
+    async def show_time_table_link(ctx):
+        sheet_link = show_sheet_link_for_individuals(ctx)
+        bot.add_log(ctx, "/시간표", f"{sheet_link}")
+        await bot_msg(ctx, f"# [시간표 바로가기]({sheet_link})")
         
     @bot.hybrid_command(name="지옥효율", description="지옥 효율 계산 링크")
     async def send_hell_efficiency_link(ctx):
@@ -218,7 +294,7 @@ def build_bot(is_test, logger_func):
                 captain_jack = f.read()
             bot.add_log(ctx, "/캡틴잭")
         except FileNotFoundError:
-            captain_jack = "이런! 캡틴잭이 제 저장장치를 부숴버렸어요!"
+            captain_jack = "이런! 캡틴잭이 적룡포로 제 저장장치를 부숴버렸어요!"
             bot.add_log(ctx, "/캡틴잭", "[오류] FileNotFoundError")
             
         await bot_msg(ctx, content=captain_jack)
@@ -289,6 +365,19 @@ def build_bot(is_test, logger_func):
         print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다. @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
+    @tasks.loop(time=datetime.time(hour=22, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
+    async def tuesday_notice_job():
+        tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(tz_kst)
+        # 1은 화요일 (0: 월, 1: 화, ...)
+        if now.weekday() == 1:
+            channel = bot.get_channel(bot.NOTICE_CHANNEL_ID)
+            if channel:
+                bot.add_log(bot.user, "/주간시간표", "화요일 공지 발송 완료")
+                await channel.send(f"<@&{bot.NOTICE_TARGET_ID}>\n시간표를쓰지않으면 -> ☠️ 🗡️ 🐸\n[시간표 쓰러가기]({os.getenv('DOTORI_TIME_TABLE')})")
+                print(f"화요일 공지 발송 완료! @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
     @bot.event
     async def on_command_error(ctx, error):
         # 명령어 객체가 존재하지 않을 수 있으므로(예: 존재하지 않는 명령어 입력 시) 방어적 코드 작성
@@ -296,7 +385,11 @@ def build_bot(is_test, logger_func):
         error_type = type(error).__name__
 
         # 1. 모든 함수에 대해 전역 오류 핸들러로 동작
-        await bot_msg(ctx, "👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        try:
+            await bot_msg(ctx, content="👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+        except Exception as e:
+            print(f"Error while sending error message: {e}")
+
         bot.add_log(ctx,f"/{command_name}", f"오류 발생 함수: {command_name}, 오류 타입: {error_type}, 오류 내용: {str(error)}")
         
         # 2. 오류가 발생한 함수와 발생 오류 타입을 print

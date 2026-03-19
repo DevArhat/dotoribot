@@ -1,7 +1,7 @@
+import datetime
 import os
 import random
 import sqlite3
-import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GAME_DB_PATH = os.path.join(BASE_DIR, 'game_data.db')
@@ -52,22 +52,22 @@ ITEMS = {
     "cheat_dice": {
         "name": "사기 주사위",
         "price": 1000000,
-        "desc": "승리확률 +20%p, 무승부확률 +5%p, 패배확률 -25%p, 올인만 가능하며, 판매 시 일정 확률로 도토리의 절반을 잃습니다."
+        "desc": "승리확률 +20%p, 무승부확률 +5%p, 패배확률 -25%p.\n올인만 가능하며, 판매 시 일정 확률로 도토리의 절반을 잃습니다."
     },
     "golden_acorn": {
         "name": "황금 도토리",
         "price": 1500000,
-        "desc": "승리확률 -5%p, 패배확률 +5%p, 승리 시 0.5% 확률로 베팅 금액의 30배를 획득합니다."
+        "desc": "무승부확률 -5%p, 패배확률 +5%p\n승리 시 0.5% 확률로 베팅 금액의 30배를 획득하고, 패배 시 베팅 금액의 5%를 돌려받습니다."
     },
     "chicken_dice": {
         "name": "겁쟁이 주사위",
         "price": 1500000,
-        "desc": "승리확률 +10%p, 패배확률 -10%p, 승리 시 베팅 금액의 40%만 획득합니다."
+        "desc": "승리확률 +10%p, 패배확률 -10%p\n승리 시 베팅 금액의 40%만 획득하고, 패배 시 베팅 금액의 30%를 돌려받습니다."
     },
     "beast_heart": {
         "name": "야수의 심장",
         "price": 1500000,
-        "desc": "승리확률 -10%p, 패배확률 +10%p, 매 승리 시마다 베팅 금액의 3배를 획득합니다."
+        "desc": "패배확률 +20%p\n매 승리 시마다 베팅 금액의 3배를 획득하고, 패배 시 베팅 금액의 2배를 잃습니다."
     },
     "strong_acorn": {
         "name": "돈줘 강화",
@@ -215,12 +215,12 @@ def get_cooldown_info(user_id: str) -> tuple:
     return (False, available_at_kst)
 
 def give_money(user_id: str) -> tuple:
-    """유저에게 5000000원(강화 시 10000000원)을 지급한다. (5분 쿨타임)"""
-    amount = 5000000
+    """유저에게 500000원(강화 시 1000000원)을 지급한다. (5분 쿨타임)"""
+    amount = 500000
     is_strong = has_item(user_id, "strong_acorn")
     if is_strong:
-        amount = 10000000
-        
+        amount = 1000000
+    
     cooldown_seconds = 300  # 5분
 
     conn = _get_connection()
@@ -888,7 +888,14 @@ def calculate_fluctuation(result: str, bet: int, current_balance: int, owned_ite
             fluctuation *= 30
             
     elif "lose" in result:
-        fluctuation = -base_bet
+        if "beast_heart" in owned_items:
+            fluctuation = -base_bet * 2
+        elif "chicken_dice" in owned_items:
+            fluctuation = -base_bet * 0.7
+        elif "golden_acorn" in owned_items:
+            fluctuation = -base_bet * 0.95
+        else:
+            fluctuation = -base_bet
     else:
         fluctuation = 0
         
@@ -906,14 +913,13 @@ def _game_roll(owned_items: set):
         lose_mod -= 25
         draw_mod += 5
     if "golden_acorn" in owned_items:
-        win_mod -= 5
+        draw_mod -= 5
         lose_mod += 5
     if "chicken_dice" in owned_items:
         win_mod += 10
         lose_mod -= 10
     if "beast_heart" in owned_items:
-        win_mod -= 10
-        lose_mod += 10
+        lose_mod += 20
 
     final_win = max(0, base_win + win_mod)
     final_lose = max(0, base_lose + lose_mod)
@@ -982,7 +988,7 @@ class StarForce:
             return 0
         
         _, _, denominator, power = self.star_data[S]
-        raw_cost = 1000 + ((self.L ** 3) * ((S + 1) ** power)) / denominator
+        raw_cost = (1000 + ((self.L ** 3) * ((S + 1) ** power)) / denominator)/10
         return int(round(raw_cost, -2))
 
     def attempt_enhancement(self, use_protection=False):

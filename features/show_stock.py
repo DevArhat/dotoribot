@@ -1,13 +1,15 @@
-from logic import SpaceController, StockInfoWithSqlite
 import discord
-import os
 from discord import app_commands
 from discord.ext import commands
+
+import os
+
+from logic import SpaceController, StockInfoWithSqlite
 
 sc = SpaceController()
 st = StockInfoWithSqlite()
 
-def show_stock_commands(bot, bot_msg):
+def show_stock_commands(bot, bot_msg, bot_defer):
 
     @bot.hybrid_command(name="주식", description="주가 보기")
     @app_commands.describe(

@@ -1,27 +1,29 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+import datetime as dt
+import random
+
 import game
 from logic import SpaceController
-import random
 
 sc = SpaceController()
 
-def dotori_game_commands(bot, bot_msg):
+def dotori_game_commands(bot, bot_msg, bot_defer):
 
-    @bot.hybrid_command(name="돈줘", description="도토리 500만개를 지급받습니다 (5분 쿨타임)")
+    @bot.hybrid_command(name="돈줘", description="도토리 50만개를 지급받습니다 (5분 쿨타임)")
     async def give_money(ctx):
         user_id = str(ctx.author.id)
         success, value, is_strong = game.give_money(user_id)
 
         if success:
             effect_text = "\n💪 **돈줘 강화** 효과 적용됨! (2배 지급)" if is_strong else ""
-            amount_text = "10,000,000" if is_strong else "5,000,000"
+            amount_text = "1,000,000" if is_strong else "500,000"
             
             bot.add_log(ctx, "/돈줘", f"지급 후 잔액: {value:,}")
             await bot_msg(ctx, f"💰 도토리 {amount_text}개가 지급되었습니다!{effect_text}\n🏦 현재 도토리: **{value:,}개**")
         else:
-            import datetime as dt
             KST = dt.timezone(dt.timedelta(hours=9))
             now_kst = dt.datetime.now(KST)
             _, available_at = game.get_cooldown_info(user_id)
@@ -156,7 +158,7 @@ def dotori_game_commands(bot, bot_msg):
     
     @bot.hybrid_command(name="랭킹", description="도토리 보유 랭킹")
     async def ranking(ctx):
-        await ctx.defer()
+        await bot_defer(ctx)
         rows = game.get_ranking(10)
         if not rows:
             await bot_msg(ctx, "아직 아무도 도토리를 가지고 있지 않아요!")
@@ -199,7 +201,7 @@ def dotori_game_commands(bot, bot_msg):
     async def show_items(ctx):
         items_info_msg = game.show_item()
         bot.add_log(ctx, "/아이템")
-        await bot_msg(ctx, items_info_msg)
+        await bot_msg(ctx, items_info_msg, ephemeral=True)
 
     class ShopView(discord.ui.View):
         def __init__(self):
