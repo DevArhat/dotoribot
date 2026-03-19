@@ -14,7 +14,7 @@ def dotori_stock_commands(bot, bot_msg, bot_defer):
         수량="구매할 주식 수"
     )
     async def buy_stock_cmd(ctx, 종목: str, 수량: int):
-        await bot_defer(ctx)
+        await bot_defer(ctx, defer_msg="🐿️ 주식 사러 가는 중...")
         user_id = str(ctx.author.id)
 
         try:
@@ -49,7 +49,7 @@ def dotori_stock_commands(bot, bot_msg, bot_defer):
         수량="판매할 주식 수"
     )
     async def sell_stock_cmd(ctx, 종목: str, 수량: int):
-        await bot_defer(ctx)
+        await bot_defer(ctx, defer_msg="🐿️ 주식 팔러 가는 중...")
         user_id = str(ctx.author.id)
 
         try:
@@ -92,7 +92,7 @@ def dotori_stock_commands(bot, bot_msg, bot_defer):
 
     @bot.hybrid_command(name="내주식", description="보유 주식 및 수익률 확인")
     async def my_stocks_cmd(ctx):
-        await bot_defer(ctx)
+        await bot_defer(ctx, defer_msg="🐿️ 포트폴리오 조회 중...")
         user_id = str(ctx.author.id)
 
         try:

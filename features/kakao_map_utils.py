@@ -13,8 +13,8 @@ load_dotenv()
 KAKAO_MAP_API_KEY = f"KakaoAK {os.getenv('KAKAO_MAP_API_KEY')}"
 REQ_URL = "https://dapi.kakao.com/v2/local/search/keyword.json?"
 
-ITEMS_PER_PAGE = 5
-TOTAL_PAGES = 10
+ITEMS_PER_PAGE = 4
+TOTAL_PAGES = 15
 
 
 class KakaoMapPaginationView(discord.ui.View):
@@ -103,23 +103,24 @@ def kakao_map_utils_commands(bot, bot_msg, bot_defer):
     @app_commands.describe(
         동네="검색할 동네"
     )
-    async def kakao_map(ctx, 동네: str = '서울'):
-        await bot_defer(ctx)
+    async def search_kakao_map(ctx, 동네: str = '서울'):
+        search_key = sc.remove_space(동네)
+        await bot_defer(ctx, defer_msg=f"🐿️ {동네.strip()} 돌아다녀보고 올게요!")
         headers = {
             "Authorization": KAKAO_MAP_API_KEY
         }
 
-        # 카카오 API에서 최대 size=15, page 1~3 으로 최대 45개 결과를 가져옴
-        # 그 중 ITEMS_PER_PAGE * TOTAL_PAGES = 50개까지 사용
+        # 카카오 API에서 최대 size=15, page 1~4 로 최대 60개 결과를 가져옴
+        # 그 중 ITEMS_PER_PAGE * TOTAL_PAGES = 60개까지 사용
         all_documents = []
-        max_needed = ITEMS_PER_PAGE * TOTAL_PAGES  # 50
+        max_needed = ITEMS_PER_PAGE * TOTAL_PAGES  # 60
 
-        for page_num in range(1, 4):  # page 1, 2, 3
+        for page_num in range(1, 5):  # page 1, 2, 3, 4
             if len(all_documents) >= max_needed:
                 break
 
             params = {
-                "query": f"{동네}",
+                "query": f"{search_key}",
                 "category_group_code": "FD6",
                 "sort": "accuracy",
                 "size": 15,
@@ -169,7 +170,7 @@ def kakao_map_utils_commands(bot, bot_msg, bot_defer):
         else:
             await ctx.send(content="# 밥먹자 :yum:", embed=embed, view=view)
 
-    @kakao_map.error
+    @search_kakao_map.error
     async def kakao_map_error(ctx, error):
         if isinstance(error, commands.CommandOnCooldown):
             # 쿨타임 중일 때 bot_msg 호출

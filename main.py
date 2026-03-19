@@ -104,7 +104,7 @@ def build_bot(is_test, logger_func):
                 return msg
     
     # Defer 통합 래퍼
-    async def bot_defer(ctx, ephemeral=False):
+    async def bot_defer(ctx, defer_msg="DEFER", ephemeral=False):
         # Slash Command의 경우 discord.py의 defer 실행 (ephemeral 연동)
         if isinstance(ctx, discord.Interaction) or getattr(ctx, 'interaction', None):
             await ctx.defer(ephemeral=ephemeral)
@@ -113,7 +113,7 @@ def build_bot(is_test, logger_func):
             await ctx.typing()
             
         # 공통 로딩 문구 출력
-        await bot_msg(ctx, "DEFER", ephemeral=ephemeral)
+        await bot_msg(ctx, defer_msg, ephemeral=ephemeral)
 
     # commands 내부의 명령어 등록
     load_all_commands(bot, bot_msg, bot_defer)
@@ -131,14 +131,6 @@ def build_bot(is_test, logger_func):
             print(f"Error syncing application commands: {e}")
         print(f'로그인 완료: {bot.user.name}')  # type: ignore
         print('--- 봇이 정상적으로 작동 중입니다 ---')
-
-
-    @bot.hybrid_command(name="저메추")
-    async def recommend_dinner(ctx):
-        dinners = os.getenv('DINNER_MENUS').split(',')
-        menu = random.choice(dinners)
-        bot.add_log(ctx, "/저메추", f"{menu}")
-        await bot_msg(ctx, f"# {menu}")
 
 
     @bot.hybrid_command(name="사용법")
