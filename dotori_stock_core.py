@@ -5,6 +5,7 @@ import re
 import sqlite3
 
 import game
+from logic import get_cached_stock_df
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STOCK_TRADE_DB_PATH = os.path.join(BASE_DIR, 'dotori_stock.db')
@@ -153,7 +154,7 @@ def get_current_price(ticker: str) -> int:
         RuntimeError: 가격 조회 실패 시
     """
     try:
-        df = fdr.DataReader(ticker, start="", end="")
+        df = get_cached_stock_df(ticker)
         if df is None or df.empty:
             raise ValueError("Empty DataFrame")
         return int(df.iloc[-1]['Close'])

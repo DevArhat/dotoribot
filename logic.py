@@ -8,6 +8,7 @@ import math
 import os
 import re
 import sqlite3
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
@@ -165,6 +166,20 @@ class Lotto:
 
 STOCK_DB_PATH = os.path.join(BASE_DIR, 'stock_data.db')
 
+_STOCK_DF_CACHE = {}
+
+def get_cached_stock_df(ticker: str):
+    now = time.time()
+    if ticker in _STOCK_DF_CACHE:
+        cache_time, cached_df = _STOCK_DF_CACHE[ticker]
+        if now - cache_time < 30:
+            return cached_df
+    
+    df = fdr.DataReader(ticker, start="", end="")
+    if df is not None and not df.empty:
+        _STOCK_DF_CACHE[ticker] = (now, df)
+    return df
+
 class StockInfoWithSqlite:
     def __init__(self):
         conn = sqlite3.connect(STOCK_DB_PATH)
@@ -188,7 +203,7 @@ class StockInfoWithSqlite:
             ticker=str(self.ALIAS_MAP[input]) if input in self.ALIAS_MAP else input
 
         try:
-            df = fdr.DataReader(ticker, start = "", end = "")
+            df = get_cached_stock_df(ticker)
             if df is None or df.empty:
                 raise ValueError("Empty DataFrame")
         except Exception as e:
