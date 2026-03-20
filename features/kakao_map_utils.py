@@ -2,16 +2,11 @@ import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-from dotenv import load_dotenv
-
-import os
 
 from logic import SpaceController
+from maps_module import tmap_optimization, get_kakao_places, KAKAO_MAP_API_KEY, REQ_URL
 
 sc = SpaceController()
-load_dotenv()
-KAKAO_MAP_API_KEY = f"KakaoAK {os.getenv('KAKAO_MAP_API_KEY')}"
-REQ_URL = "https://dapi.kakao.com/v2/local/search/keyword.json?"
 
 ITEMS_PER_PAGE = 4
 TOTAL_PAGES = 15
@@ -97,9 +92,193 @@ class KakaoMapPaginationView(discord.ui.View):
             item.disabled = True
 
 
+class PlaceSelect(discord.ui.Select):
+    def __init__(self, places, target_type, parent_view_obj):
+        self.places = places
+        self.target_type = target_type
+        self.parent_view_obj = parent_view_obj
+        
+        options = []
+        for i, p in enumerate(places):
+            name = p.get('place_name', '이름 없음')
+            address = p.get('road_address_name') or p.get('address_name', '주소 없음')
+            options.append(discord.SelectOption(
+                label=name[:100], 
+                description=address[:100], 
+                value=str(i),
+                default=(i == 0)  # 첫 번째 항목을 기본값으로 설정
+            ))
+            
+        super().__init__(placeholder="장소를 선택해주세요...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_idx = int(self.values[0])
+        selected_place = self.places[selected_idx]
+        
+        if self.target_type == "start":
+            self.parent_view_obj.start_place = selected_place
+        elif self.target_type == "dest":
+            self.parent_view_obj.dest_place = selected_place
+        elif self.target_type == "waypoint":
+            # on_submit에서 이미 첫 번째 결과가 추가되었으므로 마지막 항목을 교체합니다.
+            if self.parent_view_obj.waypoints:
+                self.parent_view_obj.waypoints[-1] = selected_place
+            else:
+                self.parent_view_obj.waypoints.append(selected_place)
+            
+        # 선택 후 원래 뷰로 메시지를 업데이트합니다.
+        await interaction.response.edit_message(embed=self.parent_view_obj.build_embed(), view=self.parent_view_obj)
+
+
+class PlaceSelectView(discord.ui.View):
+    def __init__(self, places, target_type, parent_view_obj, original_state=None):
+        super().__init__(timeout=180)
+        self.add_item(PlaceSelect(places, target_type, parent_view_obj))
+        self.parent_view_obj = parent_view_obj
+        self.target_type = target_type
+        self.original_state = original_state
+
+    
+    @discord.ui.button(label="다시 검색", style=discord.ButtonStyle.secondary, row=1)
+    async def change(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 이전 상태로 복구
+        if self.target_type == "start":
+            self.parent_view_obj.start_place = self.original_state
+        elif self.target_type == "dest":
+            self.parent_view_obj.dest_place = self.original_state
+        elif self.target_type == "waypoint":
+            if self.parent_view_obj.waypoints:
+                self.parent_view_obj.waypoints.pop()
+        
+        # 다시 검색 모달 열기
+        await interaction.response.send_modal(SearchModal(self.target_type, self.parent_view_obj))
+
+    @discord.ui.button(label="확인", style=discord.ButtonStyle.success, row=1)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 이미 on_submit에서 첫 번째 결과가 반영되었으므로 메인 뷰로 돌아갑니다.
+        await interaction.response.edit_message(embed=self.parent_view_obj.build_embed(), view=self.parent_view_obj)
+
+
+class SearchModal(discord.ui.Modal):
+    def __init__(self, target_type, parent_view_obj):
+        title_map = {
+            "start": "출발지 검색",
+            "dest": "목적지 검색",
+            "waypoint": "경유지 검색"
+        }
+        super().__init__(title=title_map.get(target_type, "장소 검색"))
+        self.target_type = target_type
+        self.parent_view_obj = parent_view_obj
+
+        self.keyword = discord.ui.TextInput(
+            label="검색어",
+            placeholder="예: 강남역, 카카오판교아지트 등",
+            required=True,
+            max_length=50
+        )
+        self.add_item(self.keyword)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        keyword = self.keyword.value
+        # thinking=True 없이 defer()를 하면 별도의 알림창 없이 원본 메시지가 수정될 것임을 디스코드에 알립니다.
+        await interaction.response.defer()
+        
+        places = await get_kakao_places(keyword, max_results=5)
+        
+        if not places:
+            await interaction.followup.send("검색 결과가 없습니다.", ephemeral=True)
+            return
+            
+        # 첫 번째 결과 자동 선택 및 이전 상태 저장
+        original_state = None
+        if self.target_type == "start":
+            original_state = self.parent_view_obj.start_place
+            self.parent_view_obj.start_place = places[0]
+        elif self.target_type == "dest":
+            original_state = self.parent_view_obj.dest_place
+            self.parent_view_obj.dest_place = places[0]
+        elif self.target_type == "waypoint":
+            self.parent_view_obj.waypoints.append(places[0])
+            
+        select_view = PlaceSelectView(places, self.target_type, self.parent_view_obj, original_state=original_state)
+        # 자동 선택된 결과가 반영된 메인 임베드와 함께 선택 뷰를 표시합니다.
+        await interaction.edit_original_response(embed=self.parent_view_obj.build_embed(), view=select_view)
+
+
+class RoutePlannerView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+        self.start_place = None
+        self.dest_place = None
+        self.waypoints = []
+
+    def build_embed(self):
+        embed = discord.Embed(title="🗺️ 경로 계획 🐿️", color=discord.Color.blue())
+        
+        start_txt = f"{self.start_place['place_name']} ({self.start_place.get('road_address_name') or self.start_place.get('address_name')})" if self.start_place else "미설정"
+        embed.add_field(name="🛫 출발지", value=start_txt, inline=False)
+        
+        if self.waypoints:
+            wp_texts = [f"{i+1}. {wp['place_name']}" for i, wp in enumerate(self.waypoints)]
+            embed.add_field(name="📍 경유지", value="\n".join(wp_texts), inline=False)
+            
+        dest_txt = f"{self.dest_place['place_name']} ({self.dest_place.get('road_address_name') or self.dest_place.get('address_name')})" if self.dest_place else "미설정"
+        embed.add_field(name="🛬 목적지", value=dest_txt, inline=False)
+        
+        return embed
+
+    @discord.ui.button(label="출발지 설정", style=discord.ButtonStyle.primary, custom_id="btn_start", row=1)
+    async def btn_start(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(SearchModal("start", self))
+
+    @discord.ui.button(label="목적지 설정", style=discord.ButtonStyle.primary, custom_id="btn_dest", row=1)
+    async def btn_dest(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(SearchModal("dest", self))
+
+    @discord.ui.button(label="경유지 추가", style=discord.ButtonStyle.secondary, custom_id="btn_waypoint", row=1)
+    async def btn_waypoint(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if len(self.waypoints) >= 5:
+            await interaction.response.send_message("🐿️ 경유지가 너무 많아! 5개까지만 추가할 수 있어~", ephemeral=True)
+            return
+        await interaction.response.send_modal(SearchModal("waypoint", self))
+
+    @discord.ui.button(label="초기화", style=discord.ButtonStyle.danger, custom_id="btn_reset", row=2)
+    async def btn_reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.start_place = None
+        self.dest_place = None
+        self.waypoints = []
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="완료", style=discord.ButtonStyle.success, custom_id="btn_done", row=2)
+    async def btn_done(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.start_place or not self.dest_place:
+            await interaction.response.send_message("🐿️ 출발지,목적지,경유지를 모두 지정해 줘~", ephemeral=True)
+            return
+            
+        for item in self.children:
+            item.disabled = True
+            
+        embed = self.build_embed()
+        embed.color = discord.Color.green()
+        embed.set_footer(text="경로 설정 완료!")
+        await interaction.response.edit_message(embed=embed, view=self)
+        
+        # 내부적으로 저장된 결과를 표시합니다.
+        msg = f"**[경로 설정 데이터]**\n출발지: {self.start_place['place_name']}\n목적지: {self.dest_place['place_name']}"
+        if self.waypoints:
+            for i,경유 in enumerate(self.waypoints):
+                msg += f"\n경유지{i+1}: {경유['place_name']}"
+        await interaction.followup.send(content=msg, ephemeral=True)
+
+        msg_result = await tmap_optimization(self.start_place, self.dest_place, self.waypoints)
+        await interaction.followup.send(content=msg_result, ephemeral=True)
+
+
+
+
 def kakao_map_utils_commands(bot, bot_msg, bot_defer):
     @bot.hybrid_command(name="식당")
-    @commands.cooldown(1, 60, commands.BucketType.user)
+    @commands.cooldown(1, 30, commands.BucketType.user)
     @app_commands.describe(
         동네="검색할 동네"
     )
@@ -178,3 +357,21 @@ def kakao_map_utils_commands(bot, bot_msg, bot_defer):
         else:
             # 기타 에러는 상위 핸들러가 처리하도록 다시 발생
             raise error
+
+    @bot.hybrid_command(name="동선")
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    async def route_planner(ctx):
+        """출발지, 경유지, 목적지를 설정하는 대화형 패널을 엽니다."""
+        view = RoutePlannerView()
+        await ctx.send(embed=view.build_embed(), view=view, ephemeral=True)
+
+
+    @route_planner.error
+    async def route_planner_error(ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            # 쿨타임 중일 때 bot_msg 호출
+            await bot_msg(ctx, content=f"🤫 아직 동선을 짤 수 없어요! {error.retry_after:.1f}초 후에 다시 시도해주세요.", ephemeral=True)
+        else:
+            # 기타 에러는 상위 핸들러가 처리하도록 다시 발생
+            raise error            
+

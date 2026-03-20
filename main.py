@@ -378,7 +378,10 @@ def build_bot(is_test, logger_func):
 
         # 1. 모든 함수에 대해 전역 오류 핸들러로 동작
         try:
-            await bot_msg(ctx, content="👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
+            if isinstance(error, commands.CommandOnCooldown):
+                await bot_msg(ctx, content=f"🤫 아직 {command_name}을 사용할 수 없어요! {error.retry_after:.1f}초 후에 다시 시도해주세요.")
+            else:
+                await bot_msg(ctx, content="👀 명령어를 알아들을 수 없거나 내부에서 오류가 발생했어요!")
         except Exception as e:
             print(f"Error while sending error message: {e}")
 
