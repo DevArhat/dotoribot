@@ -42,6 +42,15 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
         msg = (f"""# {g[1]} ({g[2]})\n{g[0]}""")
         await bot_msg(ctx, msg)
 
+    @bot.hybrid_command(name="골드설정", description="레벨별로 어느 컨텐츠 골드를 끄고 켤지 알랴줌")
+    async def show_gold_setting(ctx):
+        summary_msg = "## 선요약\n1710: 성당X\n1720: 세노X\n1730,1740: 성당X\n1750: 4하X"
+
+        with open('gold_settings.jpg', 'rb') as f:
+            picture = discord.File(f)
+            await ctx.send(summary_msg, file=picture)
+        
+
 
 
     @bot.hybrid_command(name="쌀", description="경매 쌀산기")

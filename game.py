@@ -13,7 +13,7 @@ def apply_win_fee(profit: int) -> int:
     """승리 시 얻는 순이익에서 수수료를 제외한 금액을 반환한다."""
     if profit <= 0:
         return profit
-    return int(profit * WIN_REWARD_RATE)
+    return int(round(profit * WIN_REWARD_RATE))
 
 # 아이템 정보 정의 (사전 형태로 관리하여 추후 확장이 용이하게 함)
 # ITEMS_OLD = {
@@ -52,7 +52,7 @@ ITEMS = {
     "cheat_dice": {
         "name": "사기 주사위",
         "price": 1000000,
-        "desc": "승리확률 +20%p, 무승부확률 +5%p, 패배확률 -25%p.\n올인만 가능하며, 판매 시 일정 확률로 도토리의 절반을 잃습니다."
+        "desc": "승리확률 +20%p, 무승부확률 +5%p, 패배확률 -25%p.\n베팅금액이 잔액의 절반으로 고정되고, 판매 시 일정 확률로 도토리의 절반을 잃습니다."
     },
     "golden_acorn": {
         "name": "황금 도토리",
@@ -475,7 +475,7 @@ def sell_item(user_id: str, item_id: str) -> tuple:
         return (False, get_balance(user_id), f"'{ITEMS[item_id]['name']}'을(를) 보유하고 있지 않습니다.", False)
 
     item_price = ITEMS[item_id]["price"]
-    refund = int(item_price * 0.6)
+    refund = int(round(item_price * 0.6))
     penalty_triggered = False
 
     conn = _get_connection()
@@ -486,7 +486,7 @@ def sell_item(user_id: str, item_id: str) -> tuple:
         cursor.execute("SELECT money_hold FROM acorn_insurance WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         money_hold = row[0] if row else 0
-        insurance_refund = int(money_hold * 0.8)
+        insurance_refund = int(round(money_hold * 0.8))
         refund += insurance_refund
         # money_hold 초기화, is_active=0
         cursor.execute("""
@@ -570,7 +570,7 @@ def claim_interest(user_id: str) -> tuple:
         return (False, 0, current_amount)
         
     # 이자 계산 (현재 잔액의 5%)
-    interest_amount = int(current_amount * 0.05)
+    interest_amount = int(round(current_amount * 0.05))
     
     if interest_amount > 0:
         cursor.execute("""
@@ -619,7 +619,7 @@ def claim_interest_for_all() -> int:
     count = 0
     
     for user_id, current_amount in targets:
-        interest_amount = int(current_amount * 0.05)
+        interest_amount = int(round(current_amount * 0.05))
         if interest_amount > 0:
             # 1. 잔액 및 수령일 업데이트
             cursor.execute("""
@@ -752,7 +752,7 @@ def gift(sender_id: str, receiver_id: str, amount: int) -> tuple:
     if sender_balance < amount:
         raise ValueError(f"sender_insufficient")
         
-    actual_received = int(amount * 0.95)
+    actual_received = int(round(amount * 0.95))
     
     conn = _get_connection()
     cursor = conn.cursor()
@@ -819,7 +819,7 @@ def play_game(user_id: str, bet: int) -> tuple:
     # 보험 프리미엄 도돈 차감
     insurance_premium = 0
     if has_insurance and "win" in result and fluctuation > 0:
-        insurance_premium = int(fluctuation * 0.3)
+        insurance_premium = int(round(fluctuation * 0.3))
         fluctuation -= insurance_premium
 
     conn = _get_connection()
@@ -915,7 +915,7 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
         # 보험 프리미엄 차감
         insurance_premium = 0
         if has_insurance and "win" in result and fluctuation > 0:
-            insurance_premium = int(fluctuation * 0.3)
+            insurance_premium = int(round(fluctuation * 0.3))
             fluctuation -= insurance_premium
             insurance_premiums_total += insurance_premium
 
@@ -971,7 +971,7 @@ def calculate_fluctuation(result: str, bet: int, current_balance: int, owned_ite
     is_cheat = "item_" in result
     
     if is_cheat:
-        base_bet = current_balance
+        base_bet = int(round(current_balance / 2))
     else:
         base_bet = bet
 
@@ -984,7 +984,7 @@ def calculate_fluctuation(result: str, bet: int, current_balance: int, owned_ite
         if "beast_heart" in owned_items:
             multiplier *= 3.0
             
-        fluctuation = int(fluctuation * multiplier)
+        fluctuation = int(round(fluctuation * multiplier))
         
         if "win_jackpot" in result:
             fluctuation *= 30
@@ -993,9 +993,9 @@ def calculate_fluctuation(result: str, bet: int, current_balance: int, owned_ite
         if "beast_heart" in owned_items:
             fluctuation = -base_bet * 2
         elif "chicken_dice" in owned_items:
-            fluctuation = -base_bet * 0.7
+            fluctuation = int(round(-base_bet * 0.7))
         elif "golden_acorn" in owned_items:
-            fluctuation = -base_bet * 0.95
+            fluctuation = int(round(-base_bet * 0.95))
         else:
             fluctuation = -base_bet
     else:

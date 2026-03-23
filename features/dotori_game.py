@@ -61,7 +61,7 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
             return
         item_info = ""
         if player_has_item:
-            item_info = "\n사기 주사위 아이템을 보유하고 있어 강제 올인이 적용됩니다!"
+            item_info = "\n사기 주사위 아이템을 보유하고 있어 베팅금액이 조정됩니다!"
         insurance_info = " [보험 가입 중]" if has_insurance else ""
 
         if "win" in result:
