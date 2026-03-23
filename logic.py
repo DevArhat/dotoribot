@@ -1,12 +1,14 @@
+import FinanceDataReader as fdr
+import requests
+import yt_dlp
+
 import datetime
+import json
 import math
 import os
-import json
 import re
 import sqlite3
-import FinanceDataReader as fdr
-import yt_dlp, ffmpeg
-import requests
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
@@ -164,6 +166,20 @@ class Lotto:
 
 STOCK_DB_PATH = os.path.join(BASE_DIR, 'stock_data.db')
 
+_STOCK_DF_CACHE = {}
+
+def get_cached_stock_df(ticker: str):
+    now = time.time()
+    if ticker in _STOCK_DF_CACHE:
+        cache_time, cached_df = _STOCK_DF_CACHE[ticker]
+        if now - cache_time < 30:
+            return cached_df
+    
+    df = fdr.DataReader(ticker, start="", end="")
+    if df is not None and not df.empty:
+        _STOCK_DF_CACHE[ticker] = (now, df)
+    return df
+
 class StockInfoWithSqlite:
     def __init__(self):
         conn = sqlite3.connect(STOCK_DB_PATH)
@@ -187,7 +203,7 @@ class StockInfoWithSqlite:
             ticker=str(self.ALIAS_MAP[input]) if input in self.ALIAS_MAP else input
 
         try:
-            df = fdr.DataReader(ticker, start = "", end = "")
+            df = get_cached_stock_df(ticker)
             if df is None or df.empty:
                 raise ValueError("Empty DataFrame")
         except Exception as e:
@@ -361,6 +377,25 @@ def calc_logic_v2(price, dotoris):
 판매금: {result_tuple[3]:,} 골드```""", result_tuple)    
 
 
+def show_sheet_link_for_individuals(ctx):
+    username, user_id, _ = get_user_info_from_ctx(ctx)
+    sheet_link_base = os.getenv('DOTORI_TIME_TABLE')
+    SHEET_DB_PATH = os.path.join(BASE_DIR, 'time_table_range.db')
+    conn = sqlite3.connect(SHEET_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT table_range FROM table_ranges WHERE user_id = ?", (user_id,))
+    query_result = cursor.fetchone()
+    conn.close()
+    if query_result:
+        result = f"{sheet_link_base}&range={query_result[0]}"
+    else:
+        result = sheet_link_base
+
+    return result
+        
+
+
+
 def run_vercel(game, dolpa):
 
     api_url = f"https://gacha-simulator-api.vercel.app/simulate/{game}/{dolpa}"
@@ -400,23 +435,30 @@ def run_vercel(game, dolpa):
         return result
     else:
         return f"API 요청 실패: {response.status_code}"
-                
-def write_log(target, command, details, path):
-    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
-    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
-    
+def get_user_info_from_ctx(ctx):
     try:
-        if target is None:
+        if ctx is None:
+            user = None
             username = "SYSTEM"
             user_id = "0"
         else:
-            user = getattr(target, 'author', getattr(target, 'user', target))
+            user = getattr(ctx, 'author', getattr(ctx, 'user', ctx))
             user_id = getattr(user, 'id', '0')
             name_temp = getattr(user, 'display_name', None) or str(user)
             username = name_temp if name_temp else 'UNKNOWN'
     except:
+        user = None
         username = "UNKNOWN"
         user_id = "0"
+    
+    return username, user_id, user
+
+
+def write_log(target, command, details, path):
+    timezone_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(timezone_kst).strftime('%Y-%m-%dT%H:%M:%S+09:00')
+    
+    username, user_id, _ = get_user_info_from_ctx(target)
     
     msg = f"[{now}] {username}({user_id}) | {command} | {details}\n"
 

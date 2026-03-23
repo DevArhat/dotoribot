@@ -10,16 +10,16 @@ from logic import SpaceController
 
 sc = SpaceController()
 
-def dotori_game_commands(bot, bot_msg, bot_defer):
+def dotori_game_commands(bot, bot_msg):
 
-    @bot.hybrid_command(name="돈줘", description="도토리 50만개를 지급받습니다 (5분 쿨타임)")
+    @bot.hybrid_command(name="돈줘", description="도토리 100,000개를 지급받습니다 (5분 쿨타임)")
     async def give_money(ctx):
         user_id = str(ctx.author.id)
         success, value, is_strong = game.give_money(user_id)
 
         if success:
             effect_text = "\n💪 **돈줘 강화** 효과 적용됨! (2배 지급)" if is_strong else ""
-            amount_text = "1,000,000" if is_strong else "500,000"
+            amount_text = "200,000" if is_strong else "100,000"
             
             bot.add_log(ctx, "/돈줘", f"지급 후 잔액: {value:,}")
             await bot_msg(ctx, f"💰 도토리 {amount_text}개가 지급되었습니다!{effect_text}\n🏦 현재 도토리: **{value:,}개**")
@@ -54,15 +54,14 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
     async def play_game(ctx, 베팅: int):
         user_id = str(ctx.author.id)
         try:
-            result, player_has_item, has_golden_acorn, fluctuation, balance, has_insurance = game.play_game(user_id, 베팅)
+            result, player_has_item, has_golden_acorn, fluctuation, balance = game.play_game(user_id, 베팅)
         except ValueError as e:
             bot.add_log(ctx, "/게임", f"실패: {e}")
             await bot_msg(ctx, f"❌ {e}", ephemeral=True)
             return
         item_info = ""
         if player_has_item:
-            item_info = "\n사기 주사위 아이템을 보유하고 있어 베팅금액이 조정됩니다!"
-        insurance_info = " [보험 가입 중]" if has_insurance else ""
+            item_info = "\n사기 주사위 아이템을 보유하고 있어 강제 올인이 적용됩니다!"    
 
         if "win" in result:
             if "jackpot" in result:
@@ -83,25 +82,21 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
         if balance == 0:
             result_text += "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다...😱"
 
-        if player_has_item:
-            actual_bet = balance - fluctuation
-            display_price = f"{베팅:,}개 -> {actual_bet:,}개"
-        else:
-            display_price = f"{베팅:,}개"
-        
-        bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}, 주사위보유: {player_has_item}, 황금도토리보유: {has_golden_acorn}, 보험: {has_insurance}" )
-        await bot_msg(ctx, content=f"""## {emoji} {result_text}{insurance_info}
+        display_price = f"{베팅:,}개 -> {abs(fluctuation):,}" if player_has_item else f"{베팅:,}"
+
+        bot.add_log(ctx, "/게임", f"베팅: {베팅:,}, 결과: {result}, 변동: {fluctuation:,}, 잔액: {balance:,}, 주사위보유: {player_has_item}, 황금도토리보유: {has_golden_acorn}" )
+        await bot_msg(ctx, f"""## {emoji} {result_text}
 ```
-베팅도토리: {display_price}
+베팅도토리: {display_price}개
 현재도토리: {balance:,}개
-```""", ephemeral=True)
+```""")
 
     @bot.hybrid_command(name="반복게임", description="10회재련버튼")
-    @app_commands.describe(베팅="베팅할 도토리 갯수", 반복="반복횟수 (기본 10, 1 ~ 10)")
+    @app_commands.describe(베팅="베팅할 도토리 갯수", 반복="반복횟수 (기본 10, 1 ~ 100)")
     async def repeat_game(ctx, 베팅: int, 반복: int = 10):
         user_id = str(ctx.author.id)
         try:
-            total_fluctuation, actual_rounds, wins, losses, draws, jackpot_count, has_cheat_dice, has_golden_acorn, balance, has_insurance = game.repeat_game(user_id, 베팅, 반복)
+            total_fluctuation, actual_rounds, wins, losses, draws, jackpot_count, has_cheat_dice, has_golden_acorn, balance = game.repeat_game(user_id, 베팅, 반복)
         except ValueError as e:
             bot.add_log(ctx, "/반복게임", f"실패: {e}")
             await bot_msg(ctx, f"❌ {e}", ephemeral=True)
@@ -120,21 +115,20 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
 
         jackpot_text = f" (🎇황금도토리 {jackpot_count}회!)" if jackpot_count > 0 else ""
         item_text = " [사기 주사위 보유중]" if has_cheat_dice else ""
-        insurance_text = " [보험 가입 중]" if has_insurance else ""
 
         if balance == 0:
             broke_text = "\n작은구름 밑에 묻어둔 도토리가 모두 사라졌습니다...😱"
         else:
             broke_text = ""
         if has_cheat_dice:
-            result_bot_msg = f"""## {emoji} 반복게임 결과{item_text}{jackpot_text}{insurance_text}
+            result_bot_msg = f"""## {emoji} 반복게임 결과{item_text}{jackpot_text}
 ```
 시행횟수: {actual_rounds}회 (승 {wins} / 패 {losses} / 무 {draws})
 총 변동 : {change_text}개
 현재잔액: {balance:,}개
 ```{broke_text}"""
         else:
-            result_bot_msg = f"""## {emoji} 반복게임 결과{item_text}{jackpot_text}{insurance_text}
+            result_bot_msg = f"""## {emoji} 반복게임 결과{item_text}{jackpot_text}
 ```
 베팅금액: {베팅:,}개
 시행횟수: {actual_rounds}회 (승 {wins} / 패 {losses} / 무 {draws})
@@ -142,20 +136,9 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
 현재잔액: {balance:,}개
 ```{broke_text}"""
 
-        bot.add_log(ctx, "/반복게임", f"베팅: {베팅:,}, 시행: {actual_rounds}/{반복}, 총변동: {total_fluctuation:,}, 잔액: {balance:,}, 황금도토리: {has_golden_acorn}, 사기주사위: {has_cheat_dice}, 보험: {has_insurance}")
-        await bot_msg(ctx, content=result_bot_msg, ephemeral=True)
+        bot.add_log(ctx, "/반복게임", f"베팅: {베팅:,}, 시행: {actual_rounds}/{반복}, 총변동: {total_fluctuation:,}, 잔액: {balance:,}, 황금도토리: {has_golden_acorn}, 사기주사위: {has_cheat_dice}")
+        await bot_msg(ctx, result_bot_msg)
     
-
-    @bot.hybrid_command(name="보험금", description="도토리보험 적립금을 확인합니다.")
-    async def insurance_hold_cmd(ctx):
-        user_id = str(ctx.author.id)
-        if not game.has_item(user_id, "acorn_insurance"):
-            await bot_msg(ctx, "❌ 도토리보험 아이템을 보유하고 있지 않습니다.", ephemeral=True)
-            return
-        hold = game.get_insurance_hold(user_id)
-        bot.add_log(ctx, "/보험금", f"적립금: {hold:,}")
-        await bot_msg(ctx, f"🛡️ **도토리보험 적립금**: **{hold:,}개**", ephemeral=True)
-
 
     @bot.hybrid_command(name="내돈", description="내 도토리 확인")
     async def my_money(ctx):
@@ -169,9 +152,9 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
         bot.add_log(ctx, "/내돈", f"잔액: {balance:,}")
         await bot_msg(ctx, f"🏦 현재 도토리: **{balance:,}개**\n{cooldown_text}")
     
-    @bot.hybrid_command(name="도토리랭킹", description="도토리 보유 랭킹")
-    async def dotori_ranking(ctx):
-        await bot_defer(ctx)
+    @bot.hybrid_command(name="랭킹", description="도토리 보유 랭킹")
+    async def ranking(ctx):
+        await ctx.defer()
         rows = game.get_ranking(10)
         if not rows:
             await bot_msg(ctx, "아직 아무도 도토리를 가지고 있지 않아요!")
@@ -189,40 +172,32 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
             ranking_text += f"{medal} {name} : {amount:,}개\n"
         ranking_text += "```"
         
-        bot.add_log(ctx, "/도토리랭킹")
+        bot.add_log(ctx, "/랭킹")
         await bot_msg(ctx, content=ranking_text)
 
-    @bot.hybrid_command(name="랭킹", description="도토리 갑옷 강화 랭킹")
-    async def starforce_ranking(ctx):
-        await bot_defer(ctx)
-        rows = game.get_starforce_ranking(10)
+    @bot.hybrid_command(name="불법도토리", description="불법도토리 유통 정황 탐색")
+    async def rich_players(ctx):
+        await ctx.defer()
+        rows, total_sum = game.get_rich_players(1000000000)
+        
         if not rows:
-            await bot_msg(ctx, "아직 강화 기록이 있는 유저가 없어요!")
+            await bot_msg(ctx, "도토리 게임장은 아직 건전해요! 🐿️")
             return
         
-        medals = ["🥇", "🥈", "🥉"]
-        ranking_text = "## 🏆 강화 랭킹\n```markdown\n"
-        for i, (user_id, star) in enumerate(rows):
-            medal = medals[i] if i < 3 else f"{i+1}."
+        rich_text = "## 👀 불법 의심 도토리 유통 정황\n```markdown\n"
+        for i, (user_id, amount) in enumerate(rows):
             try:
                 member = ctx.guild.get_member(int(user_id)) or await ctx.guild.fetch_member(int(user_id))
                 name = member.display_name
             except Exception:
                 name = f"유저({user_id})"
-            ranking_text += f"{medal} {name} : +{star}성\n"
-        ranking_text += "```"
+            rich_text += f"{i+1}. {name} : {amount:,}개\n"
         
-        bot.add_log(ctx, "/랭킹")
-        await bot_msg(ctx, content=ranking_text)
-
-
-    @bot.hybrid_command(name="불법도토리", description="저번 시즌의 불법도토리 유통규모 확인")
-    async def rich_players(ctx):
-        illegal_acorns = "지난 시즌 유통된 도토리는 1,209,088,405,857,655,800,000 개입니다.\n"
-        illegal_acorns += "(약 12해 908경 개)\n\n"
-        illegal_acrons += "이것은 지구상에 있는 모든 모래알의 합계보다 약 1000배 많은 도토리입니다!"
-
-        await bot_msg(ctx, content=illegal_acorns)
+        rich_text += f"\n* 불법 의심 도토리 총합: {total_sum:,}개\n"
+        rich_text += "```"
+        
+        bot.add_log(ctx, "/불법도토리", f"불법 의심자 수: {len(rows)}, 총합: {total_sum:,}")
+        await bot_msg(ctx, content=rich_text)
         
     @bot.hybrid_command(name="내템", description="내가 구매한 아이템 확인")
     async def my_item(ctx):
@@ -238,7 +213,7 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
     async def show_items(ctx):
         items_info_msg = game.show_item()
         bot.add_log(ctx, "/아이템")
-        await bot_msg(ctx, items_info_msg, ephemeral=True)
+        await bot_msg(ctx, items_info_msg)
 
     class ShopView(discord.ui.View):
         def __init__(self):
@@ -311,86 +286,30 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
     async def buy_item(ctx):
         await ctx.invoke(buy_item_v2)
 
-    # @bot.hybrid_command(name="판매", description="보유 중인 아이템을 판매합니다 (구매가의 60% 환급)")
-    # @app_commands.describe(아이템="판매할 아이템 이름 (사기주사위, 적금통장, 황금도토리)")
-    # async def sell_item_cmd(ctx, 아이템: str):
-    #     아이템 = sc.remove_space(아이템).lower()
-    #     if "적금" in 아이템 or "통장" in 아이템:
-    #         item_key = "high_interest"
-    #     elif "사기" in 아이템 or "주사위" in 아이템:
-    #         item_key = "cheat_dice"
-    #     elif "황금" in 아이템 or "도토리" in 아이템:
-    #         item_key = "golden_acorn"
-    #     else:
-    #         item_key = 아이템
+    @bot.hybrid_command(name="판매", description="보유 중인 아이템을 판매합니다 (구매가의 60% 환급)")
+    @app_commands.describe(아이템="판매할 아이템 이름 (사기주사위, 적금통장, 황금도토리)")
+    async def sell_item_cmd(ctx, 아이템: str):
+        아이템 = sc.remove_space(아이템).lower()
+        if "적금" in 아이템 or "통장" in 아이템:
+            item_key = "high_interest"
+        elif "사기" in 아이템 or "주사위" in 아이템:
+            item_key = "cheat_dice"
+        elif "황금" in 아이템 or "도토리" in 아이템:
+            item_key = "golden_acorn"
+        else:
+            item_key = 아이템
 
-    #     user_id = str(ctx.author.id)
-    #     logic_result = game.sell_item(user_id, item_key)
-    #     sell_successed = logic_result[0]
-    #     successed_text = "성공" if sell_successed else "실패"
-    #     user_balance = logic_result[1]
-    #     logic_msg = logic_result[2]
-    #     penalty_triggered = logic_result[3]
-
-    #     msg = f"[판매{successed_text}] " + logic_msg + f"\n[현재잔고] **{user_balance:,}**개"
-    #     if penalty_triggered:
-    #         msg = f"{bot.angry_koko} **사기 주사위를 통한 도토리 불법 복제가 적발되었습니다!**\n도토리의 절반을 벌금으로 냈습니다.\n{msg}"
-
-    #     bot.add_log(ctx, "/판매", f"{successed_text}, 아이템: {item_key} ({아이템}), 잔액: {user_balance:,}, 페널티: {penalty_triggered}")
-    #     await bot_msg(ctx, msg, ephemeral=not sell_successed)
-
-    class SellView(discord.ui.View):
-        def __init__(self, items_list):
-            super().__init__(timeout=60)
-            
-            options = []
-            for item_id in items_list:
-                item_name = game.ITEMS.get(item_id, {}).get("name", item_id)
-                options.append(discord.SelectOption(label=item_name, value=item_id))
-            
-            if not options:
-                self.stop()
-                return
-
-            self.select = discord.ui.Select(placeholder="판매할 아이템을 선택하세요", options=options)
-            self.select.callback = self.select_callback
-            self.add_item(self.select)
-
-        async def select_callback(self, interaction: discord.Interaction):
-            user_id = str(interaction.user.id)
-            item_key = self.select.values[0]
-            
-            logic_result = game.sell_item(user_id, item_key)
-            sell_successed = logic_result[0]
-            successed_text = "성공" if sell_successed else "실패"
-            user_balance = logic_result[1]
-            logic_msg = logic_result[2]
-            penalty_triggered = logic_result[3]
-
-            msg = f"[판매{successed_text}] " + logic_msg + f"\n[현재잔고] **{user_balance:,}**개"
-            if penalty_triggered:
-                msg = f"{bot.angry_koko} **사기 주사위를 통한 도토리 불법 복제가 적발되었습니다!**\n도토리의 절반을 벌금으로 냈습니다.\n{msg}"
-
-            bot.add_log(interaction, "/판매", f"{successed_text}, 아이템: {item_key}, 잔액: {user_balance:,}, 페널티: {penalty_triggered}")
-            
-            # 모든 버튼 비활성화
-            self.select.disabled = True
-            await interaction.response.edit_message(view=self)
-            await bot_msg(interaction, msg, ephemeral=not sell_successed)
-            self.stop()
-
-    @bot.hybrid_command(name="판매", description="보유 중인 아이템을 선택하여 판매합니다 (구매가의 60% 환급)")
-    async def sell_item_v2(ctx):
         user_id = str(ctx.author.id)
-        inventory_msg, items_list = game.get_inventory_by_userid(user_id)
-        
-        if not items_list:
-            await bot_msg(ctx, "판매할 아이템이 없습니다.", ephemeral=True)
-            return
+        logic_result = game.sell_item(user_id, item_key)
+        sell_successed = logic_result[0]
+        successed_text = "성공" if sell_successed else "실패"
+        user_balance = logic_result[1]
+        logic_msg = logic_result[2]
 
-        view = SellView(items_list)
-        bot.add_log(ctx, "/판매")
-        await ctx.send("# 어떤 아이템을 판매하시겠습니까?\n" + inventory_msg, view=view, ephemeral=True)
+        msg = f"[판매{successed_text}] " + logic_msg + f"\n[현재잔고] **{user_balance:,}**개"
+
+        bot.add_log(ctx, "/판매", f"{successed_text}, 아이템: {item_key} ({아이템}), 잔액: {user_balance:,}")
+        await bot_msg(ctx, msg, ephemeral=not sell_successed)
 
 
 
@@ -457,12 +376,12 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
 
             if result == "challenger_win":
                 msg = f"## ⚔️ {self.challenger.display_name} 승리!\n{self.challenger.mention}이(가) {self.opponent.mention}을(를) 이겼습니다!"
-                c_change = f"+{game.apply_win_fee(self.bet):,}"
+                c_change = f"+{self.bet:,}"
                 o_change = f"-{self.bet:,}"
             elif result == "opponent_win":
                 msg = f"## ⚔️ {self.opponent.display_name} 승리!\n{self.opponent.mention}이(가) {self.challenger.mention}을(를) 이겼습니다!"
                 c_change = f"-{self.bet:,}"
-                o_change = f"+{game.apply_win_fee(self.bet):,}"
+                o_change = f"+{self.bet:,}"
             else:
                 msg = f"## 🤝 무승부!\n{self.challenger.mention}과(와) {self.opponent.mention}의 결투가 무승부로 끝났습니다!"
                 c_change = "±0"
@@ -521,26 +440,6 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
                 child.disabled = True  # type: ignore
             await msg.edit(content=f"⏰ 결투 신청이 만료되었습니다.", view=view)    
 
-
-    @bot.hybrid_command(name="강화", description="도토리 갑옷을 강화합니다.")
-    @app_commands.describe(파괴방지="15, 16강에서 파괴 방지 적용 여부 (비용 2배)")
-    async def starforce_cmd(ctx, 파괴방지: bool = False):
-        user_id = str(ctx.author.id)
-        try:
-            is_success, log_messages, new_balance = game.attempt_user_starforce(user_id, 파괴방지)
-        except ValueError as e:
-            bot.add_log(ctx, "/강화", f"실패: {e}")
-            await bot_msg(ctx, f"❌ {e}", ephemeral=True)
-            return
-            
-        emoji = "✅" if is_success else "❌"
-        if any("도토리묵" in msg for msg in log_messages):
-            emoji = "💥"
-            
-        result_text = "\n".join(log_messages)
-        
-        bot.add_log(ctx, "/강화", f"성공여부: {is_success}, 파괴방지: {파괴방지}, 잔액: {new_balance:,}")
-        await bot_msg(ctx, f"## {emoji} 강화 시도 결과\n```\n{result_text}\n\n현재 도토리: {new_balance:,}개\n```")
 
     # 원시고대 도토리게임
     @bot.hybrid_command(name="홀짝", description="홀, 짝 중에 하나 띄워줌")

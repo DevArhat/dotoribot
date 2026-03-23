@@ -1,12 +1,48 @@
+import datetime
 import os
 import random
 import sqlite3
-import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GAME_DB_PATH = os.path.join(BASE_DIR, 'game_data.db')
 
+# 게임 승리 보상 비율 (10% 수수료 제외 후 90% 지급)
+WIN_REWARD_RATE = 0.9
+
+def apply_win_fee(profit: int) -> int:
+    """승리 시 얻는 순이익에서 수수료를 제외한 금액을 반환한다."""
+    if profit <= 0:
+        return profit
+    return int(round(profit * WIN_REWARD_RATE))
+
 # 아이템 정보 정의 (사전 형태로 관리하여 추후 확장이 용이하게 함)
+# ITEMS_OLD = {
+#     "high_interest": {
+#         "name": "적금 통장",
+#         "price": 500000,
+#         "desc": "매일 자정(00시)마다 현재 잔액의 5%를 이자로 받습니다."
+#     },
+#     "cheat_dice": {
+#         "name": "사기 주사위",
+#         "price": 1000000,
+#         "desc": "올인만 할 수 있으며, 승리/패배/무승부 확률이 60/25/15 %로 변경됩니다. 판매 시 일정 확률로 도토리의 절반을 잃습니다."
+#     },
+#     "golden_acorn": {
+#         "name": "황금 도토리",
+#         "price": 1500000,
+#         "desc": "승리 시 0.5% 확률로 베팅 금액의 30배를 획득합니다."
+#     },
+#     "strong_acorn": {
+#         "name": "돈줘 강화",
+#         "price": 2000000,
+#         "desc": "/돈줘 금액이 2배 증가합니다."
+#     },
+#     "acorn_loan": {
+#         "name": "땡겨쓰기",
+#         "price": 3000000,
+#         "desc": "/돈많이줘 를 사용할 수 있습니다: 15,000,000개/1일"
+#     }
+# }
 ITEMS = {
     "high_interest": {
         "name": "적금 통장",
@@ -16,12 +52,22 @@ ITEMS = {
     "cheat_dice": {
         "name": "사기 주사위",
         "price": 1000000,
-        "desc": "올인만 할 수 있으며, 승리/패배/무승부 확률이 60/25/15 %로 변경됩니다."
+        "desc": "승리확률 +20%p, 무승부확률 +5%p, 패배확률 -25%p.\n베팅금액이 잔액의 절반으로 고정되고, 판매 시 일정 확률로 도토리의 절반을 잃습니다."
     },
     "golden_acorn": {
         "name": "황금 도토리",
         "price": 1500000,
-        "desc": "승리 시 0.5% 확률로 베팅 금액의 30배를 획득합니다."
+        "desc": "무승부확률 -5%p, 패배확률 +5%p\n승리 시 0.5% 확률로 베팅 금액의 30배를 획득하고, 패배 시 베팅 금액의 5%를 돌려받습니다."
+    },
+    "chicken_dice": {
+        "name": "겁쟁이 주사위",
+        "price": 1500000,
+        "desc": "승리확률 +10%p, 패배확률 -10%p\n승리 시 베팅 금액의 40%만 획득하고, 패배 시 베팅 금액의 30%를 돌려받습니다."
+    },
+    "beast_heart": {
+        "name": "야수의 심장",
+        "price": 1500000,
+        "desc": "승리확률 -10%p, 무승부확률 -20%p, 패배확률 +30%p\n매 승리 시마다 베팅 금액의 3배를 획득하고, 패배 시 베팅 금액의 2배를 잃습니다."
     },
     "strong_acorn": {
         "name": "돈줘 강화",
@@ -32,6 +78,16 @@ ITEMS = {
         "name": "땡겨쓰기",
         "price": 3000000,
         "desc": "/돈많이줘 를 사용할 수 있습니다: 15,000,000개/1일"
+    },
+    "acorn_equip": {
+        "name": "도토리 갑옷",
+        "price": 1000000,
+        "desc": "도토리 갑옷입니다. 강화할 수 있습니다."
+    },
+    "acorn_insurance": {
+        "name": "도토리 보험",
+        "price": 2000000,
+        "desc": "승리 시 수수료 계산 후 금액의 30%를 보험료로 납부합니다. 파산 시 보험료를 전액 돌려받습니다. 판매 시 도토리보험 적립금의 80%를 환급받습니다."
     }
 }
 
@@ -98,6 +154,45 @@ def init_db():
         )
     """)
     
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS starforce_state (
+            user_id TEXT PRIMARY KEY REFERENCES money(user_id),
+            current_star INTEGER NOT NULL DEFAULT 0,
+            is_destroyed INTEGER NOT NULL DEFAULT 0,
+            total_spent INTEGER NOT NULL DEFAULT 0,
+            attempt_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS starforce_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL REFERENCES money(user_id),
+            from_star INTEGER NOT NULL,
+            to_star INTEGER NOT NULL,
+            cost INTEGER NOT NULL,
+            is_success INTEGER NOT NULL,
+            is_destroyed INTEGER NOT NULL,
+            attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acorn_highscore (
+            user_id TEXT PRIMARY KEY REFERENCES money(user_id),
+            acorn_highscore INTEGER NOT NULL,
+            achieved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acorn_insurance (
+            user_id TEXT PRIMARY KEY REFERENCES money(user_id),
+            money_hold BIGINT NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -141,12 +236,12 @@ def get_cooldown_info(user_id: str) -> tuple:
     return (False, available_at_kst)
 
 def give_money(user_id: str) -> tuple:
-    """유저에게 100000원(강화 시 200000원)을 지급한다. (5분 쿨타임)"""
-    amount = 100000
+    """유저에게 500000원(강화 시 1000000원)을 지급한다. (5분 쿨타임)"""
+    amount = 500000
     is_strong = has_item(user_id, "strong_acorn")
     if is_strong:
-        amount = 200000
-        
+        amount = 1000000
+    
     cooldown_seconds = 300  # 5분
 
     conn = _get_connection()
@@ -309,22 +404,46 @@ def buy_item(user_id: str, item_id: str) -> tuple:
     if item_id not in ITEMS:
         return (False, get_balance(user_id), "존재하지 않는 아이템입니다.")
         
-    if has_item(user_id, item_id):
-        return (False, get_balance(user_id), f"이미 '{ITEMS[item_id]['name']}'을(를) 보유하고 있습니다.")
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    if item_id == "acorn_equip":
+        # 장비를 가지고 있는지 확인
+        cursor.execute("SELECT 1 FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
+        has_equip = cursor.fetchone() is not None
         
+        if has_equip:
+            # 장비가 있다면, 파괴 상태인지 확인
+            cursor.execute("SELECT is_destroyed FROM starforce_state WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            is_destroyed = row[0] if row else 0
+            
+            if not is_destroyed:
+                conn.close()
+                return (False, get_balance(user_id), f"이미 멀쩡한 '{ITEMS[item_id]['name']}'을(를) 보유하고 있습니다.")
+    else:
+        # 일반 아이템 중복 구매 방지
+        cursor.execute("SELECT 1 FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
+        if cursor.fetchone() is not None:
+            conn.close()
+            return (False, get_balance(user_id), f"이미 '{ITEMS[item_id]['name']}'을(를) 보유하고 있습니다.")
+
     item_price = ITEMS[item_id]["price"]
     balance = get_balance(user_id)
     
     if balance < item_price:
+        conn.close()
         return (False, balance, f"잔액이 부족합니다. (가격: {item_price:,}원 / 현재 잔액: {balance:,}원)")
         
-    conn = _get_connection()
-    cursor = conn.cursor()
-    
     # 1. 잔액 차감
     cursor.execute("UPDATE money SET current_amount = current_amount - ? WHERE user_id = ?", (item_price, user_id))
-    # 2. 인벤토리에 아이템 추가
-    cursor.execute("INSERT INTO inventory (user_id, item_id) VALUES (?, ?)", (user_id, item_id))
+    
+    if item_id == "acorn_equip" and has_equip:
+        # 파괴된 장비를 복구하는 경우 (인벤토리에 이미 있으므로 추가 안 함, 스타포스 상태만 초기화)
+        cursor.execute("UPDATE starforce_state SET current_star = 12, is_destroyed = 0 WHERE user_id = ?", (user_id,))
+    else:
+        # 2. 인벤토리에 아이템 추가
+        cursor.execute("INSERT INTO inventory (user_id, item_id) VALUES (?, ?)", (user_id, item_id))
     
     cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
     new_balance = cursor.fetchone()[0]
@@ -332,35 +451,76 @@ def buy_item(user_id: str, item_id: str) -> tuple:
     conn.commit()
     conn.close()
     
+    if item_id == "acorn_equip" and has_equip:
+        return (True, new_balance, f"새로운 '{ITEMS[item_id]['name']}'을(를) 구매하여 파괴된 장비를 +12성 상태로 복구했습니다!")
+
     return (True, new_balance, f"'{ITEMS[item_id]['name']}'을(를) 구매했습니다!")
 
 def sell_item(user_id: str, item_id: str) -> tuple:
     """
     유저가 보유 중인 아이템을 판매한다. 구매가의 60%를 환급한다.
+    '사기 주사위'("cheat_dice") 판매 시 일정 확률로 보유 도토리의 절반을 잃음.
 
     Returns:
-        (True, 잔액, 메시지) - 판매 성공
-        (False, 잔액, 메시지) - 판매 실패 (아이템 미보유 등)
+        (True, 잔액, 메시지, penalty_triggered) - 판매 성공
+        (False, 잔액, 메시지, False) - 판매 실패 (아이템 미보유 등)
     """
+    if item_id == "acorn_equip":
+        return (False, get_balance(user_id), "도토리 갑옷은 판매할 수 없습니다.", False)
+
     if item_id not in ITEMS:
-        return (False, get_balance(user_id), "존재하지 않는 아이템입니다.")
+        return (False, get_balance(user_id), "존재하지 않는 아이템입니다.", False)
 
     if not has_item(user_id, item_id):
-        return (False, get_balance(user_id), f"'{ITEMS[item_id]['name']}'을(를) 보유하고 있지 않습니다.")
+        return (False, get_balance(user_id), f"'{ITEMS[item_id]['name']}'을(를) 보유하고 있지 않습니다.", False)
 
     item_price = ITEMS[item_id]["price"]
-    refund = int(item_price * 0.6)
+    refund = int(round(item_price * 0.6))
+    penalty_triggered = False
 
     conn = _get_connection()
     cursor = conn.cursor()
 
+    # 도토리보험 판매 특수 처리
+    if item_id == "acorn_insurance":
+        cursor.execute("SELECT money_hold FROM acorn_insurance WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        money_hold = row[0] if row else 0
+        insurance_refund = int(round(money_hold * 0.8))
+        refund += insurance_refund
+        # money_hold 초기화, is_active=0
+        cursor.execute("""
+            INSERT INTO acorn_insurance (user_id, money_hold, is_active) VALUES (?, 0, 0)
+            ON CONFLICT(user_id) DO UPDATE SET money_hold = 0, is_active = 0
+        """, (user_id,))
+
     # 1. 인벤토리에서 아이템 제거
     cursor.execute("DELETE FROM inventory WHERE user_id = ? AND item_id = ?", (user_id, item_id))
-    # 2. 잔액 환급
+    
+    # 2. 잔액 환급 (기본)
     cursor.execute(
         "INSERT INTO money (user_id, current_amount) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET current_amount = current_amount + ?",
         (user_id, refund, refund)
     )
+
+    # 3. 사기 주사위 페널티 확인
+    if item_id == "cheat_dice":
+        cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+        balance_after_refund = cursor.fetchone()[0]
+        
+        # 기본 확률 5%
+        penalty_prob = 5
+        if balance_after_refund > 1000000000:
+            extra_prob = (balance_after_refund - 1000000000) // 50000000
+            penalty_prob += extra_prob
+        
+        penalty_prob = min(penalty_prob, 60)
+        
+        if random.randint(1, 100) <= penalty_prob:
+            penalty_triggered = True
+            penalty_amount = balance_after_refund // 2
+            cursor.execute("UPDATE money SET current_amount = current_amount - ? WHERE user_id = ?", (penalty_amount, user_id))
+            cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, -penalty_amount))
 
     cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
     new_balance = cursor.fetchone()[0]
@@ -368,7 +528,13 @@ def sell_item(user_id: str, item_id: str) -> tuple:
     conn.commit()
     conn.close()
 
-    return (True, new_balance, f"'{ITEMS[item_id]['name']}'을(를) **{refund:,}개**에 판매했습니다! (구매가의 60%)")
+    msg = f"'{ITEMS[item_id]['name']}'을(를) **{refund:,}개**에 판매했습니다! (구매가의 60%)"
+    if item_id == "acorn_insurance":
+        msg = f"'도토리보험'을(를) 판매했습니다!\n"
+        msg += f"- 판매 환급금 (60%): {int(ITEMS[item_id]['price'] * 0.6):,}개\n"
+        msg += f"- 적립금 환급 (80%): {int((refund - int(ITEMS[item_id]['price'] * 0.6))):,}개\n"
+        msg += f"- 합계: **{refund:,}개**"
+    return (True, new_balance, msg, penalty_triggered)
 
 
 def claim_interest(user_id: str) -> tuple:
@@ -404,7 +570,7 @@ def claim_interest(user_id: str) -> tuple:
         return (False, 0, current_amount)
         
     # 이자 계산 (현재 잔액의 5%)
-    interest_amount = int(current_amount * 0.05)
+    interest_amount = int(round(current_amount * 0.05))
     
     if interest_amount > 0:
         cursor.execute("""
@@ -453,7 +619,7 @@ def claim_interest_for_all() -> int:
     count = 0
     
     for user_id, current_amount in targets:
-        interest_amount = int(current_amount * 0.05)
+        interest_amount = int(round(current_amount * 0.05))
         if interest_amount > 0:
             # 1. 잔액 및 수령일 업데이트
             cursor.execute("""
@@ -543,13 +709,13 @@ def duel(challenger_id: str, opponent_id: str, bet: int) -> tuple:
     
     if roll < 0.45:
         result = "challenger_win"
-        c_change = bet
+        c_change = apply_win_fee(bet)
         o_change = -bet
         duel_result_code = "A"
     elif roll < 0.90:
         result = "opponent_win"
         c_change = -bet
-        o_change = bet
+        o_change = apply_win_fee(bet)
         duel_result_code = "B"
     else:
         result = "draw"
@@ -586,7 +752,7 @@ def gift(sender_id: str, receiver_id: str, amount: int) -> tuple:
     if sender_balance < amount:
         raise ValueError(f"sender_insufficient")
         
-    actual_received = int(amount * 0.95)
+    actual_received = int(round(amount * 0.95))
     
     conn = _get_connection()
     cursor = conn.cursor()
@@ -613,10 +779,19 @@ def gift(sender_id: str, receiver_id: str, amount: int) -> tuple:
 
 
 
+def get_insurance_hold(user_id: str) -> int:
+    """도토리보험 적립금을 반환한다. 해당 유저의 보험이 없으면 0을 반환한다."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT money_hold FROM acorn_insurance WHERE user_id = ? AND is_active = 1", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
 def play_game(user_id: str, bet: int) -> tuple:
     """
     가위바위보 게임을 수행한다.
-    '사기 주사위' 아이템 보유 시 확률이 보정된다.
+    아이템 보유 여부에 따라 확률과 보상이 보정된다.
     """
     if bet <= 0:
         raise ValueError("베팅할 도토리는 어딨어?")
@@ -625,30 +800,27 @@ def play_game(user_id: str, bet: int) -> tuple:
     if current_balance < bet:
         raise ValueError(f"도토리가 모자라! (현재 잔액: {current_balance:,}원)")
 
-    # [수정] 아이템 보유 여부에 따른 확률 분기
-    has_cheat_dice = has_item(user_id, "cheat_dice")
-    has_golden_acorn = has_item(user_id, "golden_acorn")
-    fluctuation = 0
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT item_id FROM inventory WHERE user_id = ?", (user_id,))
+    owned_items = set(row[0] for row in cursor.fetchall())
+    conn.close()
 
-    result = _game_roll(has_cheat_dice, has_golden_acorn)
+    has_cheat_dice = "cheat_dice" in owned_items
+    has_golden_acorn = "golden_acorn" in owned_items
+    has_insurance = "acorn_insurance" in owned_items
 
-    if "item_" in result:
-        if "win" in result:
-            fluctuation = current_balance
-        elif "lose" in result:
-            fluctuation = -current_balance
-        else:
-            fluctuation = 0
-    else:
-        if "win" in result:
-            fluctuation = bet
-        elif "lose" in result:
-            fluctuation = -bet
-        else:
-            fluctuation = 0
+    result = _game_roll(owned_items)
+    fluctuation = calculate_fluctuation(result, bet, current_balance, owned_items)
 
-    if "win_jackpot" in result:
-        fluctuation *= 30
+    if "win" in result and fluctuation > 0:
+        fluctuation = apply_win_fee(fluctuation)
+
+    # 보험 프리미엄 도돈 차감
+    insurance_premium = 0
+    if has_insurance and "win" in result and fluctuation > 0:
+        insurance_premium = int(round(fluctuation * 0.3))
+        fluctuation -= insurance_premium
 
     conn = _get_connection()
     cursor = conn.cursor()
@@ -665,10 +837,29 @@ def play_game(user_id: str, bet: int) -> tuple:
     cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
     balance = cursor.fetchone()[0]
 
+    # 보험료 적립및 파산 확인
+    if has_insurance:
+        if insurance_premium > 0:
+            cursor.execute("""
+                INSERT INTO acorn_insurance (user_id, money_hold, is_active) VALUES (?, ?, 1)
+                ON CONFLICT(user_id) DO UPDATE SET money_hold = money_hold + ?
+            """, (user_id, insurance_premium, insurance_premium))
+        if balance <= 0:
+            cursor.execute("SELECT money_hold FROM acorn_insurance WHERE user_id = ? AND is_active = 1", (user_id,))
+            hold_row = cursor.fetchone()
+            payout = hold_row[0] if hold_row else 0
+            if payout > 0:
+                cursor.execute("UPDATE money SET current_amount = current_amount + ? WHERE user_id = ?", (payout, user_id))
+                cursor.execute("UPDATE acorn_insurance SET money_hold = 0 WHERE user_id = ?", (user_id,))
+                cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, payout))
+                cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+                balance = cursor.fetchone()[0]
+
     conn.commit()
     conn.close()
 
-    return (result, has_cheat_dice, has_golden_acorn, fluctuation, balance)
+    return (result, has_cheat_dice, has_golden_acorn, fluctuation, balance, has_insurance)
+
 
 def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
     """
@@ -682,15 +873,21 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
         raise ValueError("베팅할 도토리는 어딨어?")
     if repeat <= 0:
         raise ValueError("한번은 해야지!!")
-    if repeat > 100:
+    if repeat > 10:
         raise ValueError("그렇게 많이는 못해! 중간에 까먹어!")
 
     current_balance = get_balance(user_id)
     if current_balance < bet:
         raise ValueError(f"도토리가 모자라! (현재 잔액: {current_balance:,}원)")
 
-    has_cheat_dice = has_item(user_id, "cheat_dice")
-    has_golden_acorn = has_item(user_id, "golden_acorn")
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT item_id FROM inventory WHERE user_id = ?", (user_id,))
+    owned_items = set(row[0] for row in cursor.fetchall())
+
+    has_cheat_dice = "cheat_dice" in owned_items
+    has_golden_acorn = "golden_acorn" in owned_items
+    has_insurance = "acorn_insurance" in owned_items
 
     total_fluctuation = 0
     wins = 0
@@ -698,9 +895,7 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
     draws = 0
     jackpot_count = 0
     actual_rounds = 0
-
-    conn = _get_connection()
-    cursor = conn.cursor()
+    insurance_premiums_total = 0
 
     for _ in range(repeat):
         # 사기 주사위가 아닌 경우 잔액이 베팅금 미만이면 조기 종료
@@ -711,29 +906,23 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
             break
 
         actual_rounds += 1
-        result = _game_roll(has_cheat_dice, has_golden_acorn)
+        result = _game_roll(owned_items)
+        fluctuation = calculate_fluctuation(result, bet, current_balance, owned_items)
 
-        if "item_" in result:
-            if "win" in result:
-                fluctuation = current_balance
-            elif "lose" in result:
-                fluctuation = -current_balance
-            else:
-                fluctuation = 0
-        else:
-            if "win" in result:
-                fluctuation = bet
-            elif "lose" in result:
-                fluctuation = -bet
-            else:
-                fluctuation = 0
+        if "win" in result and fluctuation > 0:
+            fluctuation = apply_win_fee(fluctuation)
 
-        if "win_jackpot" in result:
-            fluctuation *= 30
-            jackpot_count += 1
+        # 보험 프리미엄 차감
+        insurance_premium = 0
+        if has_insurance and "win" in result and fluctuation > 0:
+            insurance_premium = int(round(fluctuation * 0.3))
+            fluctuation -= insurance_premium
+            insurance_premiums_total += insurance_premium
 
         if "win" in result:
             wins += 1
+            if "jackpot" in result:
+                jackpot_count += 1
         elif "lose" in result:
             losses += 1
         else:
@@ -751,6 +940,23 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
             INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)
         """, (user_id, fluctuation))
 
+        # 보험료 적립 및 파산 확인
+        if has_insurance:
+            if insurance_premium > 0:
+                cursor.execute("""
+                    INSERT INTO acorn_insurance (user_id, money_hold, is_active) VALUES (?, ?, 1)
+                    ON CONFLICT(user_id) DO UPDATE SET money_hold = money_hold + ?
+                """, (user_id, insurance_premium, insurance_premium))
+            if current_balance <= 0:
+                cursor.execute("SELECT money_hold FROM acorn_insurance WHERE user_id = ? AND is_active = 1", (user_id,))
+                hold_row = cursor.fetchone()
+                payout = hold_row[0] if hold_row else 0
+                if payout > 0:
+                    cursor.execute("UPDATE money SET current_amount = current_amount + ? WHERE user_id = ?", (payout, user_id))
+                    cursor.execute("UPDATE acorn_insurance SET money_hold = 0 WHERE user_id = ?", (user_id,))
+                    cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, payout))
+                    current_balance += payout
+
     cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
     balance = cursor.fetchone()[0]
 
@@ -758,22 +964,300 @@ def repeat_game(user_id: str, bet: int, repeat: int = 10) -> tuple:
     conn.close()
 
     return (total_fluctuation, actual_rounds, wins, losses, draws, jackpot_count,
-            has_cheat_dice, has_golden_acorn, balance)
+            has_cheat_dice, has_golden_acorn, balance, has_insurance)
 
-def _game_roll(has_cheat_dice: bool, has_golden_acorn: bool):
-    if has_cheat_dice:
-        results, weights = ['item_win', 'item_lose', 'item_draw'], [60, 25, 15]
+
+def calculate_fluctuation(result: str, bet: int, current_balance: int, owned_items: set) -> int:
+    is_cheat = "item_" in result
+    
+    if is_cheat:
+        base_bet = int(round(current_balance / 2))
     else:
-        results, weights = ['lose', 'win', 'draw'], [40, 40, 20]
+        base_bet = bet
+
+    if "win" in result:
+        fluctuation = base_bet
+        
+        multiplier = 1.0
+        if "chicken_dice" in owned_items:
+            multiplier *= 0.4
+        if "beast_heart" in owned_items:
+            multiplier *= 3.0
+            
+        fluctuation = int(round(fluctuation * multiplier))
+        
+        if "win_jackpot" in result:
+            fluctuation *= 30
+            
+    elif "lose" in result:
+        if "beast_heart" in owned_items:
+            fluctuation = -base_bet * 2
+        elif "chicken_dice" in owned_items:
+            fluctuation = int(round(-base_bet * 0.7))
+        elif "golden_acorn" in owned_items:
+            fluctuation = int(round(-base_bet * 0.95))
+        else:
+            fluctuation = -base_bet
+    else:
+        fluctuation = 0
+        
+    return fluctuation
+
+def _game_roll(owned_items: set):
+    base_win, base_lose, base_draw = 40, 40, 20
+    
+    win_mod = 0
+    lose_mod = 0
+    draw_mod = 0
+    
+    if "cheat_dice" in owned_items:
+        win_mod += 20
+        lose_mod -= 25
+        draw_mod += 5
+    if "golden_acorn" in owned_items:
+        draw_mod -= 5
+        lose_mod += 5
+    if "chicken_dice" in owned_items:
+        win_mod += 10
+        lose_mod -= 10
+    if "beast_heart" in owned_items:
+        lose_mod += 30
+        win_mod -= 10
+        draw_mod -= 20
+
+    final_win = max(0, base_win + win_mod)
+    final_lose = max(0, base_lose + lose_mod)
+    final_draw = max(0, base_draw + draw_mod)
+    
+    results = ['win', 'lose', 'draw']
+    weights = [final_win, final_lose, final_draw]
+    
     result = random.choices(results, weights=weights, k=1)[0]
 
-    if "win" in result and has_golden_acorn:
+    if "cheat_dice" in owned_items:
+        result = "item_" + result
+
+    if "win" in result and "golden_acorn" in owned_items:
         jackpot_r = random.random()
         jackpot_r *= 100
         if jackpot_r < 0.5:
             result += "_jackpot"
 
     return result
+
+class StarForce:
+    def __init__(self, item_level=100):
+        self.L = item_level
+        self.current_star = 0
+        self.total_spent = 0
+        self.attempt_count = 0
+        self.is_destroyed = False
+        
+        # [성공 확률(%), 파괴 확률(%), 비용 분모, 비용 지수]
+        self.star_data = {
+            0:  [95.0, 0.0, 36, 1],
+            1:  [90.0, 0.0, 36, 1],
+            2:  [85.0, 0.0, 36, 1],
+            3:  [85.0, 0.0, 36, 1],
+            4:  [80.0, 0.0, 36, 1],
+            5:  [75.0, 0.0, 36, 1],
+            6:  [70.0, 0.0, 36, 1],
+            7:  [65.0, 0.0, 36, 1],
+            8:  [60.0, 0.0, 36, 1],
+            9:  [55.0, 0.0, 36, 1],
+            10: [50.0, 0.0, 571, 2.7],
+            11: [45.0, 0.0, 314, 2.7],
+            12: [40.0, 0.0, 214, 2.7],
+            13: [35.0, 0.0, 157, 2.7],
+            14: [30.0, 0.0, 107, 2.7],
+            15: [30.0, 2.1, 200, 2.7],
+            16: [30.0, 2.1, 200, 2.7],
+            17: [15.0, 6.8, 150, 2.7],
+            18: [15.0, 6.8, 70, 2.7],
+            19: [15.0, 8.5, 45, 2.7],
+            20: [30.0, 10.5, 200, 2.7],
+            21: [15.0, 12.75, 125, 2.7],
+            22: [15.0, 17.0, 200, 2.7],
+            23: [10.0, 18.0, 200, 2.7],
+            24: [10.0, 18.0, 200, 2.7],
+            25: [10.0, 18.0, 200, 2.7],
+            26: [7.0, 18.6, 200, 2.7],
+            27: [5.0, 19.0, 200, 2.7],
+            28: [3.0, 19.4, 200, 2.7],
+            29: [1.0, 19.8, 200, 2.7]
+        }
+
+    def calculate_base_cost(self, S):
+        if S not in self.star_data:
+            return 0
+        
+        _, _, denominator, power = self.star_data[S]
+        raw_cost = (1000 + ((self.L ** 3) * ((S + 1) ** power)) / denominator)/10
+        return int(round(raw_cost, -2))
+
+    def attempt_enhancement(self, use_protection=False):
+        """
+        1회 강화 시도 로직
+        :param use_protection: 파괴 방지 사용 여부 (15, 16성 구간에서만 유효)
+        """
+        log_messages = []
+        if self.is_destroyed:
+            log_messages.append("장비가 파괴된 상태입니다. 복구가 필요합니다.")
+            return False, False, 0, log_messages
+
+        if self.current_star >= max(self.star_data.keys()):
+            log_messages.append("최대 강화 단계에 도달했습니다.")
+            return False, False, 0, log_messages
+
+        S = self.current_star
+        success_rate, destruct_rate, _, _ = self.star_data[S]
+        
+        cost = self.calculate_base_cost(S)
+        
+        applied_protection = False
+        if use_protection and 15 <= S <= 16 and destruct_rate > 0:
+            cost *= 2  # 파괴 방지 적용 시 비용이 100% 추가 (2배)
+            destruct_rate = 0.0  # 파괴 확률 무효화
+            applied_protection = True
+
+        # 자원 소모 기록
+        self.total_spent += cost
+        self.attempt_count += 1
+        
+        # 콘솔 출력 포매팅
+        protect_text = "[🛡️파괴 방지 ON] " if applied_protection else ""
+        log_messages.append(f"[{S}강 -> {S+1}강 시도] {protect_text}| 소모 도토리: {cost:,} 개 / 누적 소모 도토리: {self.total_spent:,} 개")
+
+        # 0.00 ~ 100.00 사이의 난수 생성
+        roll = random.uniform(0, 100)
+
+        # 결과 판정
+        if roll <= success_rate:
+            self.current_star += 1
+            log_messages.append(f"✅ 성공! (현재: {self.current_star}강)")
+            return True, False, cost, log_messages
+        elif roll <= success_rate + destruct_rate:
+            self.current_star = 0  # 흔적 전승 시 +12성으로 복구되므로, 파괴 시에는 0성으로 초기화 (복구 시 12성 부여)
+            self.is_destroyed = True
+
+            log_messages.append(f"💥 도토리 갑옷이 도토리묵이 되었습니다!")
+            return False, True, cost, log_messages
+        else:
+            log_messages.append(f"❌ 도토리 갑옷에는 아무런 변화가 없습니다. (현재: {self.current_star}강)")
+            return False, False, cost, log_messages
+
+def get_starforce_state(user_id: str) -> StarForce:
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT current_star, is_destroyed, total_spent, attempt_count FROM starforce_state WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    sf = StarForce()
+    if row:
+        sf.current_star = row[0]
+        sf.is_destroyed = bool(row[1])
+        sf.total_spent = row[2]
+        sf.attempt_count = row[3]
+    return sf
+
+def get_starforce_ranking(limit: int = 10) -> list:
+    """도토리 갑옷 강화 수치 내림차순으로 유저 목록을 조회한다. 
+    강화 수치가 같으면 누적 소모 도토리가 많은 순으로 정렬한다."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT user_id, current_star 
+        FROM starforce_state 
+        ORDER BY current_star DESC, total_spent DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def attempt_user_starforce(user_id: str, use_protection: bool = False) -> tuple:
+
+    """
+    유저의 도토리 갑옷 강화를 시도한다.
+    
+    Returns:
+        (success_bool, log_messages, new_balance)
+    Raises:
+        ValueError: 부족한 조건 (도토리, 장비 등)
+    """
+    # 1. 장비 소유 및 상태 확인
+    if not has_item(user_id, "acorn_equip"):
+        raise ValueError("도토리 갑옷을 먼저 상점에서 구매해야 합니다.")
+        
+    sf = get_starforce_state(user_id)
+    if sf.is_destroyed:
+        raise ValueError("도토리 갑옷이 파괴된 상태입니다! 상점에서 새로 구매하여 복구하세요.")
+        
+    current_star = sf.current_star
+    if current_star >= max(sf.star_data.keys()):
+        raise ValueError("이미 최대 강화 단계(29성)에 도달했습니다!")
+
+    # 2. 비용 계산 및 잔액 확인 (가상 실행 1회)
+    cost = sf.calculate_base_cost(current_star)
+    if use_protection and 15 <= current_star <= 16:
+        cost *= 2
+
+    balance = get_balance(user_id)
+    if balance < cost:
+        raise ValueError(f"도토리가 부족합니다! (필요: {cost:,}개 / 현재: {balance:,}개)")
+
+    # 3. 강화 실행
+    is_success, is_destroyed, actual_cost, log_messages = sf.attempt_enhancement(use_protection)
+    
+    # 4. DB 반영
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    # 돈 차감
+    cursor.execute("UPDATE money SET current_amount = current_amount - ? WHERE user_id = ?", (actual_cost, user_id))
+    
+    # 상태 갱신
+    cursor.execute("""
+        INSERT INTO starforce_state (user_id, current_star, is_destroyed, total_spent, attempt_count)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            current_star = ?,
+            is_destroyed = ?,
+            total_spent = total_spent + ?,
+            attempt_count = attempt_count + 1
+    """, (user_id, sf.current_star, int(sf.is_destroyed), actual_cost, 1, sf.current_star, int(sf.is_destroyed), actual_cost))
+    
+    # 히스토리 기록
+    cursor.execute("""
+        INSERT INTO starforce_history (user_id, from_star, to_star, cost, is_success, is_destroyed)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, current_star, sf.current_star, actual_cost, int(is_success), int(is_destroyed)))
+    
+    # game_result 기록
+    cursor.execute("INSERT INTO game_result (user_id, money_fluctuation) VALUES (?, ?)", (user_id, -actual_cost))
+    
+    # 하이스코어 갱신 (성공 시에만)
+    if is_success:
+        cursor.execute("""
+            INSERT INTO acorn_highscore (user_id, acorn_highscore, achieved_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                acorn_highscore = EXCLUDED.acorn_highscore,
+                achieved_at = EXCLUDED.achieved_at
+            WHERE EXCLUDED.acorn_highscore > acorn_highscore
+        """, (user_id, sf.current_star))
+
+    cursor.execute("SELECT current_amount FROM money WHERE user_id = ?", (user_id,))
+
+    new_balance = cursor.fetchone()[0]
+    
+    conn.commit()
+    conn.close()
+    
+    return is_success, log_messages, new_balance
+
+
 
 # 스크립트 실행 시 DB 초기화 (수정된 스키마 반영)
 if __name__ == "__main__":
