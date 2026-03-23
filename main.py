@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import datetime
 import os
 import random
+import re
 
 import dotori_stock_core
 import game
@@ -131,6 +132,35 @@ def build_bot(is_test, logger_func):
             print(f"Error syncing application commands: {e}")
         print(f'로그인 완료: {bot.user.name}')  # type: ignore
         print('--- 봇이 정상적으로 작동 중입니다 ---')
+
+    @bot.event
+    async def on_message(message):
+        CON_PATTERN = re.compile(r"^<(a?):(\w+):(\d+)>$")
+
+        if message.author.bot:
+            return
+
+        match = CON_PATTERN.match(message.content)
+        if match:
+            is_animated = match.group(1) == "a"
+            emoji_id = match.group(3)
+            extension = "gif" if is_animated else "png"
+                
+            # 이모지 원본 이미지 URL 생성
+            emoji_url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{extension}?size=1024&quality=lossless"
+
+            # 1. 원본 메시지 삭제
+            await message.delete()
+
+            # 2. 임베드 생성
+            embed = discord.Embed(color=message.author.color)
+            embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
+            embed.set_image(url=emoji_url)
+
+            # 3. 전송
+            await message.channel.send(embed=embed)
+
+        await bot.process_commands(message)
 
 
     @bot.hybrid_command(name="사용법")
