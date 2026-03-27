@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
+from logic import show_time_table_for_individual as stt
 
 sc = SpaceController()
 
@@ -50,7 +51,10 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
             picture = discord.File(f)
             await ctx.send(summary_msg, file=picture)
         
-
+    @bot.hybrid_command(name="내시간표", description="내 시간표 보기 ※ 수동 입력이라 부정확할 수 있음")
+    async def show_my_time_table(ctx):
+        bot.add_log(ctx, "/내시간표")
+        await bot_msg(ctx, stt(ctx), ephemeral=True)
 
 
     @bot.hybrid_command(name="쌀", description="경매 쌀산기")

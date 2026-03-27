@@ -526,21 +526,29 @@ def dotori_game_commands(bot, bot_msg, bot_defer):
     @app_commands.describe(파괴방지="15, 16강에서 파괴 방지 적용 여부 (비용 2배)")
     async def starforce_cmd(ctx, 파괴방지: bool = False):
         user_id = str(ctx.author.id)
+        set_ephemeral = True
         try:
             is_success, log_messages, new_balance = game.attempt_user_starforce(user_id, 파괴방지)
         except ValueError as e:
             bot.add_log(ctx, "/강화", f"실패: {e}")
             await bot_msg(ctx, f"❌ {e}", ephemeral=True)
             return
-            
-        emoji = "✅" if is_success else "❌"
+        
+        if is_success:
+            emoji = "✅"
+            set_ephemeral = False
+        else:
+            emoji = "❌"
+            set_ephemeral = True
+        
         if any("도토리묵" in msg for msg in log_messages):
             emoji = "💥"
+            set_ephemeral = False
             
         result_text = "\n".join(log_messages)
         
         bot.add_log(ctx, "/강화", f"성공여부: {is_success}, 파괴방지: {파괴방지}, 잔액: {new_balance:,}")
-        await bot_msg(ctx, f"## {emoji} 강화 시도 결과\n```\n{result_text}\n\n현재 도토리: {new_balance:,}개\n```")
+        await bot_msg(ctx, content=f"## {emoji} 강화 시도 결과\n```\n{result_text}\n\n현재 도토리: {new_balance:,}개\n```", ephemeral=set_ephemeral)
 
     # 원시고대 도토리게임
     @bot.hybrid_command(name="홀짝", description="홀, 짝 중에 하나 띄워줌")

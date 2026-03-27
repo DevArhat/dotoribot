@@ -28,7 +28,7 @@ async def get_kakao_places(keyword: str, max_results: int = 5):
 
 # ── TMap API ───────────────────────────────────────────────
 TMAP_API_KEY = f"{os.getenv('TMAP_API_KEY')}"
-TMAP_URL = 'https://apis.openapi.sk.com/tmap/routes/routeOptimization10?version=1'
+TMAP_OPT_URL = 'https://apis.openapi.sk.com/tmap/routes/routeOptimization10?version=1'
 
 
 async def tmap_optimization(출발, 도착, 경유리스트):
@@ -66,7 +66,7 @@ async def tmap_optimization(출발, 도착, 경유리스트):
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(TMAP_URL, headers=headers, data=json.dumps(data)) as response:
+        async with session.post(TMAP_OPT_URL, headers=headers, data=json.dumps(data)) as response:
             if response.status == 200:
                 reponse_status = 200
                 responsejson = await response.json()

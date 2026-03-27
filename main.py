@@ -387,7 +387,7 @@ def build_bot(is_test, logger_func):
         print(f"자정 이자 지급 완료! 총 {count}명의 유저가 이자를 받았습니다. @ {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-    @tasks.loop(time=datetime.time(hour=22, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
+    @tasks.loop(time=datetime.time(hour=20, minute=30, tzinfo=datetime.timezone(datetime.timedelta(hours=9))))
     async def tuesday_notice_job():
         tz_kst = datetime.timezone(datetime.timedelta(hours=9))
         now = datetime.datetime.now(tz_kst)

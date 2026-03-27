@@ -452,6 +452,61 @@ def get_user_info_from_ctx(ctx):
         user_id = "0"
     
     return username, user_id, user
+    
+def sort_schedule(item):
+    day_order = {'수': 0, '목': 1, '금': 2, '토': 3, '일': 4, '월': 5, '화': 6}
+    m = re.search(r'\((\w)\s(\d{2}:\d{2})\)', item)
+    if m:
+        day = m.group(1)
+        time = m.group(2)
+        return (day_order.get(day, 7), time)
+    return (7, "")
+
+
+def show_time_table_for_individual(ctx):
+    tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(tz_kst)
+    weekday_map = {
+        "월": 0,
+        "화": 1,
+        "수": 2,
+        "목": 3,
+        "금": 4,
+        "토": 5,
+        "일": 6
+    }
+    with open(TIME_TABLE_PATH, 'r', encoding='utf-8') as f:
+        full_table = json.load(f)
+    
+    full_table_sorted = {}
+
+    for name, schedule in full_table.items():
+        full_table_sorted[name] = sorted(schedule, key=sort_schedule)
+
+    today_table_msg = ''
+    time_table_msg = ''
+    username, user_id, _ = get_user_info_from_ctx(ctx)
+    current_user_table = full_table_sorted.get(str(user_id), [])
+    if not current_user_table:
+        today_table_msg = "오늘은 일정이 없어요! 🐿️"
+        time_table_msg = "등록된 일정이 없어요! 🐿️"
+    else:
+        today_table_msg = "```markdown\n"
+        time_table_msg = "```markdown\n"
+        for table_element in current_user_table:
+            if weekday_map.get(str(table_element)[1], 0) == now.weekday():
+                today_table_msg += f"- {str(table_element)}\n"
+            time_table_msg += f"- {str(table_element)}\n"
+        time_table_msg += "```"
+        today_table_msg += "```"
+    if len(today_table_msg) == 15:
+        today_table_msg = "오늘은 일정이 없어요! 🐿️"
+    
+    today_table_msg = "## 오늘의 일정!\n" + today_table_msg
+    time_table_msg = "## 전체 일정!\n" + time_table_msg
+
+    msg_context = f"## <@{user_id}> 님의 시간표\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n"
+    return msg_context + today_table_msg + "\n" + time_table_msg
 
 
 def write_log(target, command, details, path):
