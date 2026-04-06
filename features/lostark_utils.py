@@ -1,5 +1,5 @@
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 
 from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
@@ -147,3 +147,70 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
 
 
         await bot_msg(ctx, content="호구조사 완료! 🐿️", embed=embed_result)
+
+    
+    @bot.hybrid_command(name="깐평", description="닉네임을 공백이나 쉼표로 구분해서 입력 (2~7)")
+    @app_commands.describe(
+        캐릭터명="캐릭터명을 공백 or 쉼표로 구분해서 입력"
+    )
+    async def average_power(ctx, *, 캐릭터명: str):
+        # 쉼표를 공백으로 바꾼 뒤 리스트화 및 중복 제거
+        name_list = list(dict.fromkeys(캐릭터명.replace(',', ' ').split()))
+        count = len(name_list)
+
+        # 2~7명 제한 체크
+        if not (2 <= count <= 7):
+            return await bot_msg(ctx, f"❌ 닉네임은 2~7개 사이로 입력해주세요! (현재 {count}개)", ephemeral=True)
+
+        await bot_defer(ctx, "깐평 계산 중... 🐿️")
+
+        lapi = api_module.Lostark_Api(bot.session)
+        
+        import asyncio
+        tasks = [lapi.get_info(name) for name in name_list]
+        results = await asyncio.gather(*tasks)
+
+        powers = []
+        found_names = []
+        failed_names = []
+
+        for name, result in zip(name_list, results):
+            if isinstance(result, dict) and 'ArmoryProfile' in result:
+                profile = result.get('ArmoryProfile')
+                if profile and profile.get('CombatPower') is not None:
+                    try:
+                        # 전투력 문자열에서 쉼표 제거 후 float 변환
+                        cp = float(str(profile['CombatPower']).replace(',', ''))
+                        powers.append(cp)
+                        found_names.append(name)
+                        continue
+                    except (ValueError, TypeError):
+                        pass
+            
+            failed_names.append(name)
+
+        if not powers:
+            return await bot_msg(ctx, "캐릭터 정보를 가져오는데 실패했습니다. 닉네임을 확인해주세요.")
+
+        avg_power = sum(powers) / len(powers)
+        
+        msg = f"## 깐평!\n"
+        msg += f"📊 **평균투력: {avg_power:,.2f}**\n"
+        
+        # 각 캐릭터별 전투력 나열
+        for name, result in zip(name_list, results):
+            if isinstance(result, dict) and 'ArmoryProfile' in result:
+                profile = result.get('ArmoryProfile')
+                if profile and profile.get('CombatPower') is not None:
+                    try:
+                        official_name = profile.get('CharacterName', name)
+                        cp = float(str(profile['CombatPower']).replace(',', ''))
+                        msg += f"{official_name}: {cp:,.2f}\n"
+                    except (ValueError, TypeError):
+                        pass
+
+        if failed_names:
+            msg += f"\n❌ 실패: {', '.join(failed_names)}\n"
+        
+        bot.add_log(ctx, "/깐평", f"평균: {avg_power:,.2f} ({len(found_names)}명)")
+        await bot_msg(ctx, msg)
