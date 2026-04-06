@@ -62,7 +62,8 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
             
             # 봇 루프를 사용해 Threadsafe하게 비동기 메시지 전송
             title_with_duration = f"{next_song['duration_str']} {next_song['title']}" if next_song.get('duration_str') else next_song['title']
-            embed = discord.Embed(title=title_with_duration, description="🎶 이어서 부를게요", color=0x00FF00)
+            video_url = next_song.get('video_url')
+            embed = discord.Embed(title=title_with_duration, description="🎶 이어서 부를게요", color=0x00FF00, url=video_url)
             if 'thumbnail' in next_song and next_song['thumbnail']:
                 embed.set_thumbnail(url=next_song['thumbnail'])
             coro = next_song['ctx'].send(embed=embed)
@@ -100,6 +101,7 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
                 data = data['entries'][0]
                 
             stream_url = data.get('url')
+            video_url = data.get('webpage_url')
             title = data.get('title')
             thumbnail = data.get('thumbnail')
             duration = data.get('duration')
@@ -107,6 +109,7 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
             # 곡 정보를 딕셔너리로 저장
             song_info = {
                 'url': stream_url, 
+                'video_url': video_url,
                 'title': title, 
                 'thumbnail': thumbnail,
                 'duration_str': format_duration(duration),
@@ -126,7 +129,7 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
             # 4. 이미 재생 중이거나 일시정지 상태인 경우 대기열에 추가
             if voice_client.is_playing() or voice_client.is_paused():
                 music_queues[ctx.guild.id].append(song_info)
-                embed = discord.Embed(title=title_with_duration, description="📝 대기열에 추가했어요", color=0x00FF00)
+                embed = discord.Embed(title=title_with_duration, description="📝 대기열에 추가했어요", color=0x00FF00, url=video_url)
                 if thumbnail:
                     embed.set_thumbnail(url=thumbnail)
                 await msg.edit(content="", embed=embed)
@@ -140,7 +143,7 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
                 voice_client.play(volume_transformer, after=lambda e: play_next(e, ctx, voice_client))
                 
                 bot.add_log(ctx, "/노래", f"input: {url}, title: {title}, url: {stream_url}")
-                embed = discord.Embed(title=title_with_duration, description="🎶 오케이! 한번 불러볼게요.", color=0x00FF00)
+                embed = discord.Embed(title=title_with_duration, description="🎶 오케이! 한번 불러볼게요.", color=0x00FF00, url=video_url)
                 if thumbnail:
                     embed.set_thumbnail(url=thumbnail)
                 await msg.edit(content="", embed=embed)
@@ -158,7 +161,11 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
         if ctx.guild.id in current_songs and current_songs[ctx.guild.id]:
             song = current_songs[ctx.guild.id]
             title_with_duration = f"{song.get('duration_str', '')} {song['title']}".strip()
-            queue_text += f"**[재생 중]** `{title_with_duration}`\n\n"
+            video_url = song.get('video_url', '')
+            if video_url:
+                queue_text += f"**[재생 중]** [{title_with_duration}]({video_url})\n\n"
+            else:
+                queue_text += f"**[재생 중]** `{title_with_duration}`\n\n"
             current_thumbnail = song.get('thumbnail')
             has_songs = True
 
@@ -166,7 +173,11 @@ def singing_dotori_commands(bot, bot_msg, bot_defer):
             queue_list = music_queues[ctx.guild.id]
             for i, song in enumerate(queue_list, 1):
                 title_with_duration = f"{song.get('duration_str', '')} {song['title']}".strip()
-                queue_text += f"**{i}.** `{title_with_duration}`\n"
+                video_url = song.get('video_url', '')
+                if video_url:
+                    queue_text += f"**{i}.** [{title_with_duration}]({video_url})\n"
+                else:
+                    queue_text += f"**{i}.** `{title_with_duration}`\n"
             has_songs = True
 
         if not has_songs:

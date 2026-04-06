@@ -10,11 +10,13 @@ import re
 import sqlite3
 import time
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH = os.path.join(BASE_DIR, 'bot.log')
-KOSPI_TICKER_PATH = os.path.join(BASE_DIR, 'kospi_ticker.json')
-TEST_LOG_PATH = os.path.join(BASE_DIR, 'test.log')
-TIME_TABLE_PATH = os.path.join(BASE_DIR, 'time_table.json')
+import const
+
+BASE_DIR = const.BASE_DIR
+LOG_PATH = const.LOG_PATH
+KOSPI_TICKER_PATH = const.KOSPI_TICKER_PATH
+TEST_LOG_PATH = const.TEST_LOG_PATH
+TIME_TABLE_PATH = const.TIME_TABLE_PATH
 
 class SpaceController:
     _SPACE_REPLACER = re.compile(r'\s{2,}')
@@ -93,28 +95,39 @@ class LostArkGuardian:
         
         
 class RhythmDotori:
-    # e2-micro 환경을 위해 리소스 사용 최소화
     ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0'
-}
+        'format': 'bestaudio/best',
+        'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+        'restrictfilenames': True,
+        'noplaylist': True,
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
+        'logtostderr': False,
+        'quiet': True,
+        'no_warnings': True,
+        'default_search': 'auto',
+        'source_address': '0.0.0.0',
+        'cachedir': False, # 디스크 I/O 최소화
+    }
 
-# 네트워크 스트림 불안정 시 재연결 옵션
     ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
-}
+        # [핵심] 네트워크 지연 및 패킷 손실 방어 옵션 추가
+        'before_options': (
+            '-reconnect 1 '
+            '-reconnect_streamed 1 '
+            '-reconnect_delay_max 5 '
+            '-probesize 5000000 ' # 분석 데이터 양 조절 (빠른 시작)
+            '-analyzeduration 0'
+        ),
+        'options': (
+            '-vn '
+            '-af "aresample=async=1" ' # 오디오 싱크 밀림 방지
+            '-threads 1' # e2-micro의 단일 코어 자원 집중
+        )
+    }
+
     def __init__(self):
-        self.ytdl = yt_dlp.YoutubeDL(self.ytdl_format_options) # type: ignore
+        self.ytdl = yt_dlp.YoutubeDL(self.ytdl_format_options)
 
 
     
@@ -463,47 +476,115 @@ def sort_schedule(item):
     return (7, "")
 
 
+def _get_week_offset(weekday_num):
+    """수요일 기준 주간에서의 오프셋을 반환한다. 수=0, 목=1, ..., 화=6"""
+    return (weekday_num - 2) % 7
+
+_WEEKDAY_MAP = {"월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6}
+_WEEKDAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"]
+
+def _resolve_entry_day_and_time(entry_text):
+    """
+    항목 텍스트에서 요일과 시간을 파싱한다.
+    24:xx 이상의 시간은 표기된 요일에 귀속시킨다 (06시 기준 확장일).
+    반환: (표기요일번호 0~6, hour, minute) 또는 None
+    """
+    m = re.search(r'\((\w)\s(\d{2}):(\d{2})\)', entry_text)
+    if not m:
+        return None
+    day_char = m.group(1)
+    hour = int(m.group(2))
+    minute = int(m.group(3))
+
+    day_num = _WEEKDAY_MAP.get(day_char)
+    if day_num is None:
+        return None
+
+    # 24:xx 이상이라도 표기 요일에 귀속 (06시 기준 확장일)
+    return (day_num, hour, minute)
+
+
 def show_time_table_for_individual(ctx):
     tz_kst = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(tz_kst)
-    weekday_map = {
-        "월": 0,
-        "화": 1,
-        "수": 2,
-        "목": 3,
-        "금": 4,
-        "토": 5,
-        "일": 6
-    }
+
+    # 06시 기준 확장일: 00:00~05:59는 전날의 확장 시간대로 간주
+    if now.hour < 6:
+        effective_today = (now.weekday() - 1) % 7
+        effective_hour = now.hour + 24
+        effective_minute = now.minute
+    else:
+        effective_today = now.weekday()
+        effective_hour = now.hour
+        effective_minute = now.minute
+
+    today_weekday = now.weekday()  # today_table_msg용 (캘린더 기준)
+    today_offset = _get_week_offset(effective_today)
+
     with open(TIME_TABLE_PATH, 'r', encoding='utf-8') as f:
         full_table = json.load(f)
-    
-    full_table_sorted = {}
 
+    full_table_sorted = {}
     for name, schedule in full_table.items():
         full_table_sorted[name] = sorted(schedule, key=sort_schedule)
 
     today_table_msg = ''
     time_table_msg = ''
+    number_total = 0
+    number_today = 0
     username, user_id, _ = get_user_info_from_ctx(ctx)
     current_user_table = full_table_sorted.get(str(user_id), [])
+    if not current_user_table:
+        # user_id로 못 찾으면 한글 이름으로 재시도
+        userid_json_path = os.path.join(BASE_DIR, 'time_table_userid.json')
+        with open(userid_json_path, 'r', encoding='utf-8') as uf:
+            userid_map = json.load(uf)
+        korean_name = userid_map.get(str(user_id))
+        if korean_name:
+            current_user_table = full_table_sorted.get(korean_name, [])
     if not current_user_table:
         today_table_msg = "오늘은 일정이 없어요! 🐿️"
         time_table_msg = "등록된 일정이 없어요! 🐿️"
     else:
-        today_table_msg = "```markdown\n"
-        time_table_msg = "```markdown\n"
+        has_today_entry = False
+        today_table_msg = ""
+        time_table_msg = ""
         for table_element in current_user_table:
-            if weekday_map.get(str(table_element)[1], 0) == now.weekday():
-                today_table_msg += f"- {str(table_element)}\n"
-            time_table_msg += f"- {str(table_element)}\n"
-        time_table_msg += "```"
-        today_table_msg += "```"
-    if len(today_table_msg) == 15:
+            entry_str = str(table_element)
+
+            if _WEEKDAY_MAP.get(entry_str[1], -1) == today_weekday:
+                today_table_msg += f"**{entry_str}**\n"
+                number_today += 1
+                has_today_entry = True
+
+            resolved = _resolve_entry_day_and_time(entry_str)
+            if resolved is None:
+                time_table_msg += f"* {entry_str}\n"
+                continue
+
+            entry_day_num, entry_hour, entry_minute = resolved
+            entry_offset = _get_week_offset(entry_day_num)
+
+            if entry_offset < today_offset:
+                prefix = ""
+            elif entry_offset > today_offset:
+                prefix = "*"
+            else:
+                if (entry_hour, entry_minute) <= (effective_hour, effective_minute):
+                    prefix = ""
+                else:
+                    prefix = "+"
+            
+            if prefix:
+                number_total += 1
+                time_table_msg += f"{prefix} {entry_str}\n"
+        if time_table_msg:
+            time_table_msg = "```diff\n" + time_table_msg + "```"
+    if not has_today_entry:
         today_table_msg = "오늘은 일정이 없어요! 🐿️"
-    
-    today_table_msg = "## 오늘의 일정!\n" + today_table_msg
-    time_table_msg = "## 전체 일정!\n" + time_table_msg
+
+    today_table_msg = f"## 오늘의 일정! ({number_today}개)\n" + today_table_msg
+    time_table_msg = f"## 전체 일정! ({number_total}개)\n" + time_table_msg
 
     msg_context = f"## <@{user_id}> 님의 시간표\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n"
     return msg_context + today_table_msg + "\n" + time_table_msg

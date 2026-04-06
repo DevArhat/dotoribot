@@ -31,3 +31,27 @@ def domini_commands(bot, bot_msg, bot_defer):
     async def ask_domini_error(ctx, error):
         if isinstance(error, commands.CommandOnCooldown):
             await bot_msg(ctx, f"🐿️ 도미나이는 잠시 쉴래요... {error.retry_after:.2f}초 후에 다시 물어봐주세요.")
+
+
+    @bot.hybrid_command(name="파이논봇", description="파이논봇에게 질문하기. 5분당 10회만 사용 가능합니다. 예고 없이 사라질 수 있음!")
+    @commands.cooldown(10, 300, commands.BucketType.user)    
+    @app_commands.describe(
+        질문="질문 내용"
+    )
+    async def ask_phainon(ctx, 질문: str):
+        request_query = ''
+        if len(질문) > 30:
+            request_query = 질문[:30] + "..."
+        else:
+            request_query = 질문
+        response_header = f"원본 질문: `{request_query}`"
+        await bot_defer(ctx, defer_msg="🔥🏃 [ 불을 쫓는 여정 중 ]...")
+        response = call_genai(질문, persona='PhainonBot')
+        response = response_header + "\n\n" + response
+        bot.add_log(ctx, "/파이논봇", 질문 + " // " + response)
+        await bot_msg(ctx, response)
+    
+    @ask_phainon.error
+    async def ask_phainon_error(ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            await bot_msg(ctx, f"🔥 33550335 번째 윤회 중 ... 완료까지 시스템 시간으로 {error.retry_after:.2f}초")

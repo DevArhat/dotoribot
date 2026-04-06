@@ -1,6 +1,7 @@
 # tmux new -s bot
 # tmux attach -t bot
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -26,6 +27,7 @@ class DotoriBot(commands.Bot):
         super().__init__(command_prefix='!', intents=intents)
         self.add_log = logger_func
         self.angry_koko = os.getenv('ANGRY_KOKO')
+        self.session = None
         if is_test:
             self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID_TEST')))
             self.NOTICE_CHANNEL_ID = int(str(os.getenv('DOTORI_NOTICE_CHANNEL_ID_TEST')))
@@ -34,8 +36,15 @@ class DotoriBot(commands.Bot):
             self.CHAT_CHANNEL_ID = int(str(os.getenv('DOTORI_CHAT_CHANNEL_ID')))
             self.NOTICE_CHANNEL_ID = int(str(os.getenv('DOTORI_NOTICE_CHANNEL_ID')))
             self.NOTICE_TARGET_ID = int(str(os.getenv('DOTORI_NOTICE_TARGET_ID')))
+
     async def setup_hook(self):
-        await self.tree.sync()  # 슬래시 명령어 동기화
+        self.session = aiohttp.ClientSession()
+        await self.tree.sync()
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+        await super().close()
 
 
 load_dotenv()

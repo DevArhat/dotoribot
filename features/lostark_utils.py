@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
 from logic import show_time_table_for_individual as stt
+import lostark_api_module as api_module
 
 sc = SpaceController()
 
@@ -72,14 +73,13 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
             bot.add_log(ctx,
                     "/쌀",
                     f"가격: {거래소}, 인원수: {컨텐츠인원}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
-            # interaction.response.send_message를 통해 답장을 보냅니다.
             await bot_msg(ctx, response_text)
         else:
             bot.add_log(ctx,
                         "/쌀",
                         f"가격: {거래소}, 인원수: {컨텐츠인원}, 응답: {logic_response}"
                         )
-            await bot_msg(ctx, logic_response) # type: ignore
+            await bot_msg(ctx, logic_response)
 
 
     @bot.hybrid_command(name="선점쌀", description="경매 쌀산기 (선점가)")
@@ -104,4 +104,46 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
                         "/쌀",
                         f"가격: {거래소}, 인원수: {컨텐츠인원}, 응답: {logic_response}"
                         )
-            await bot_msg(ctx, logic_response) # type: ignore  
+            await bot_msg(ctx, logic_response) # type: ignore
+
+    @bot.hybrid_command(name="정보", description="전투정보실 기본정보를 가져옵니다")
+    @app_commands.describe(
+        캐릭터명="캐릭터명"
+    )
+    async def show_character_info(ctx, 캐릭터명: str):
+        await bot_defer(ctx, "전정실 검색 중... ⌨️️🐿️")
+
+        lapi = api_module.Lostark_Api(bot.session)
+        result = await lapi.get_info(캐릭터명)
+
+        if isinstance(result, str):
+            bot.add_log(ctx, "/정보", f"[실패] {result}")
+            return await bot_msg(ctx, result, ephemeral=True)
+        
+        parsed_result = api_module.parse_character(result)
+        embed_result = api_module.char_result_to_embed(parsed_result)
+        bot.add_log(ctx, "/정보", f"[성공] {parsed_result['char_name']}")
+
+
+        await bot_msg(ctx, content="전정실 보고왔다! 🐿️", embed=embed_result)
+
+    @bot.hybrid_command(name="부캐", description="전투레벨이 60 이상인 부캐 목록")
+    @app_commands.describe(
+        캐릭터명="캐릭터명"
+    )
+    async def get_siblings(ctx, 캐릭터명: str):
+        await bot_defer(ctx, "호구조사 중... 📊🐿️")
+
+        lapi = api_module.Lostark_Api(bot.session)
+        result = await lapi.get_siblings(캐릭터명)
+
+        if isinstance(result, str):
+            bot.add_log(ctx, f"/부캐 {캐릭터명}", f"[실패] {result}")
+            return await bot_msg(ctx, result, ephemeral=True)
+        
+        parsed_result = api_module.parse_siblings_list(result)
+        embed_result = api_module.siblings_list_to_embed(parsed_result)
+        bot.add_log(ctx, f"/부캐 {캐릭터명}", f"[성공]")
+
+
+        await bot_msg(ctx, content="호구조사 완료! 🐿️", embed=embed_result)
