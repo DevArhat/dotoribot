@@ -59,10 +59,17 @@ def build_bot(is_test, logger_func):
     dotori_stock_core.init_stock_db()
 
     # 응답 메시지 발송 공통 함수
-    async def bot_msg(ctx, content="", embed=None, stickers=None, ephemeral=False):
+    async def bot_msg(ctx, content="", embed=None, embeds=None, stickers=None, ephemeral=False):
         # content가 비어있거나 "DEFER"일 때 기본 문구 설정
         if not content or content == "DEFER":
             content = "🐿️ 잠시만요! 생각 좀 해볼게요."
+
+        if embed and not embeds:
+            embeds = [embed]
+
+        # discord.py는 embeds=None을 넘기면 내부에서 len(None) 에러 발생
+        # None일 때는 MISSING sentinel을 사용해야 함
+        _embeds = embeds if embeds is not None else discord.utils.MISSING
 
         # 1. Interaction 기반
         inter = ctx if isinstance(ctx, discord.Interaction) else getattr(ctx, 'interaction', None)
@@ -71,27 +78,27 @@ def build_bot(is_test, logger_func):
             if inter.response.is_done():
                 try:
                     # 이미 응답
-                    return await inter.edit_original_response(content=content, embed=embed)
+                    return await inter.edit_original_response(content=content, embeds=_embeds)
                 except Exception:
                     # 수정이 불가능한 예외 상황
-                    return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
+                    return await inter.followup.send(content=content, embeds=_embeds, ephemeral=ephemeral)
             else:
                 # 일반 응답
                 try:
-                    await inter.response.send_message(content=content, embed=embed, ephemeral=ephemeral)
+                    await inter.response.send_message(content=content, embeds=_embeds, ephemeral=ephemeral)
                     return await inter.original_response()
                 except (discord.InteractionResponded, discord.NotFound, discord.HTTPException):
                     # 이미 응답되었거나 만료된 경우 followup 또는 edit_original_response 시도
                     try:
                         if inter.response.is_done():
-                            return await inter.edit_original_response(content=content, embed=embed)
+                            return await inter.edit_original_response(content=content, embeds=_embeds)
                         else:
-                            return await inter.followup.send(content=content, embed=embed, ephemeral=ephemeral)
+                            return await inter.followup.send(content=content, embeds=_embeds, ephemeral=ephemeral)
                     except Exception:
                         # 최후의 수단: 가능한 경우 채널에 직접 메시지
                         if hasattr(ctx, 'send'):
                             try:
-                                return await ctx.send(content=content, embed=embed)
+                                return await ctx.send(content=content, embeds=_embeds)
                             except:
                                 pass
                         return None
@@ -102,14 +109,14 @@ def build_bot(is_test, logger_func):
             last_msg = getattr(ctx, "_last_bot_msg", None)
             if last_msg:
                 try:
-                    return await last_msg.edit(content=content, embed=embed)
+                    return await last_msg.edit(content=content, embeds=embeds)
                 except Exception:
                     # 메시지가 삭제되었을 경우 새로 발송
-                    msg = await ctx.message.reply(content=content, embed=embed, stickers=stickers)
+                    msg = await ctx.message.reply(content=content, embeds=embeds, stickers=stickers)
                     ctx._last_bot_msg = msg
                     return msg
             else:
-                msg = await ctx.message.reply(content=content, embed=embed, stickers=stickers)
+                msg = await ctx.message.reply(content=content, embeds=embeds, stickers=stickers)
                 ctx._last_bot_msg = msg
                 return msg
     

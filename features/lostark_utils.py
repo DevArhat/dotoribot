@@ -214,3 +214,65 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
         
         bot.add_log(ctx, "/깐평", f"평균: {avg_power:,.2f} ({len(found_names)}명)")
         await bot_msg(ctx, msg)
+
+    @bot.hybrid_command(name="쌀섬", description="오늘 or 가까운 날짜의 쌀섬")
+    async def show_gold_island(ctx):
+        await bot_defer(ctx, "쌀섬 찾으러 다녀올게! 🐿️")
+
+        lapi = api_module.Lostark_Api(bot.session)
+        result = await lapi.get_gold_island()
+
+        if isinstance(result, str):
+            bot.add_log(ctx, "/쌀섬", f"[실패] {result}")
+            return await bot_msg(ctx, result, ephemeral=True)
+        
+        parsed_result = api_module.parse_gold_island_data(result)
+        embed_result = api_module.gold_island_to_embed(parsed_result)
+        bot.add_log(ctx, "/쌀섬", f"[성공] {embed_result.title}")
+
+        await bot_msg(ctx, content="쌀섬 다녀왔다! 🐿️", embed=embed_result)
+
+
+    @bot.hybrid_command(name="아비도스", description="거래소에서 아비도스 가격 검색")
+    async def show_abydos(ctx):
+        await bot_defer(ctx, "거래소 검색 중... 🐿️")
+
+        lapi = api_module.Lostark_Api(bot.session)
+        result = await lapi.get_abydos_price()
+
+        if isinstance(result, str):
+            bot.add_log(ctx, "/아비도스", f"[실패] {result}")
+            return await bot_msg(ctx, result, ephemeral=True)
+        
+        data = result.get('Items') or []
+        if not data:
+            bot.add_log(ctx, "/아비도스", "[실패] Items가 비어있음")
+            return await bot_msg(ctx, "아비도스 검색 결과가 없어요! 🐿️", ephemeral=True)
+
+        embeds = []
+       
+        
+        for item in data:
+            embed_temp = discord.Embed(
+                title=item['Name'],
+                description="조사 완료! 🐿️",
+                color=discord.Color.gold(),
+            )
+            embed_temp.add_field(
+                name="현재 최저가",
+                value=f"{item['CurrentMinPrice']}",
+                inline=True
+            )
+            embed_temp.add_field(
+                name="어제 평균가",
+                value=f"{item['YDayAvgPrice']}",
+                inline=True
+            )
+            embed_temp.add_field(
+                name="최근 거래가",
+                value=f"{item['RecentPrice']}",
+                inline=True
+            )
+            embed_temp.set_thumbnail(url=item['Icon'])
+            embeds.append(embed_temp)
+        await bot_msg(ctx, content="아비도스 가격 조사 완료! 🐿️", embeds=embeds)

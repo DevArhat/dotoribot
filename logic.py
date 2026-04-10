@@ -586,7 +586,7 @@ def show_time_table_for_individual(ctx):
     today_table_msg = f"## 오늘의 일정! ({number_today}개)\n" + today_table_msg
     time_table_msg = f"## 전체 일정! ({number_total}개)\n" + time_table_msg
 
-    msg_context = f"## <@{user_id}> 님의 시간표\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n"
+    msg_context = f"## <@{user_id}> 님의 시간표\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n기준일자 2026-04-08 13:00"
     return msg_context + today_table_msg + "\n" + time_table_msg
 
 

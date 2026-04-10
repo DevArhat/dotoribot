@@ -1,6 +1,8 @@
 .venv/
 *.venv/
 __pycache__/
+*.json
+!kospi_ticker.json
 *.env
 test*
 *.log

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 import os
 from collections import Counter
+import datetime
 
 import const
 from logic import SpaceController
@@ -44,6 +45,32 @@ class Lostark_Api:
             else:
                 return f"API 호출 오류: {response.status}"
 
+    async def get_gold_island(self):
+        url = f"{self.base_url}/gamecontents/calendar"
+
+        async with self.session.get(url, headers = self.headers) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                return f"API 호출 오류: {response.status}"
+
+    async def get_abydos_price(self):
+        url = f"{self.base_url}/markets/items"
+
+        payload = {
+            "Sort": "CURRENT_MIN_PRICE",
+            "CategoryCode": 50010,
+            "ItemTier": 4,
+            "ItemName": "아비도스",
+            "PageNo": 1,
+            "SortCondition": "ASC"
+        }
+
+        async with self.session.post(url, headers=self.headers, json=payload) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                return f"API 호출 오류: {response.status}"
 
 
 def parse_character(data: dict) -> dict:
@@ -210,23 +237,99 @@ def siblings_list_to_embed(data: list):
     )
     return embed
 
+def parse_gold_island_data(data):
+    today_str = datetime.datetime.today().strftime('%Y-%m-%d')
+    
+    gold_islands = []
+    future_gold_islands = []
+    
+    for item in data:
+        if item.get("CategoryName") == "모험 섬":
+            start_times = item.get("StartTimes") or []
+            
+            for reward in item.get("RewardItems") or []:
+                for reward_item in reward.get("Items") or []:
+                    if "골드" in reward_item.get("Name", ""):
+                        reward_start_times = reward_item.get("StartTimes")
+                        
+                        if reward_start_times:
+                            for rt in reward_start_times:
+                                if rt.startswith(today_str):
+                                    if not any(gi['ContentsName'] == item.get("ContentsName") for gi in gold_islands):
+                                        gold_islands.append({
+                                            "ContentsName": item.get("ContentsName"),
+                                            "ContentsIcon": item.get("ContentsIcon"),
+                                            "StartTimes": [t for t in start_times if t.startswith(today_str)]
+                                        })
+                                elif rt > today_str:
+                                    future_gold_islands.append({
+                                        "ContentsName": item.get("ContentsName"),
+                                        "ContentsIcon": item.get("ContentsIcon"),
+                                        "NextTime": rt
+                                    })
+                    
+    result = {
+        "today_gold_islands": gold_islands,
+        "next_gold_islands": []
+    }
+    
+    # 오늘 골드섬 없는 경우
+    if not gold_islands:
+        if future_gold_islands:
+            future_gold_islands.sort(key=lambda x: x['NextTime'])
+            closest_date = future_gold_islands[0]['NextTime'].split('T')[0]
+            
+            next_islands_map = {}
+            for fi in future_gold_islands:
+                if fi['NextTime'].startswith(closest_date):
+                    name = fi['ContentsName']
+                    if name not in next_islands_map:
+                        next_islands_map[name] = {
+                            "ContentsName": name,
+                            "ContentsIcon": fi['ContentsIcon'],
+                            "StartTimes": []
+                        }
+                    next_islands_map[name]["StartTimes"].append(fi['NextTime'])
+            
+            for name in next_islands_map:
+                next_islands_map[name]["StartTimes"].sort()
+                
+            result["next_gold_islands"] = list(next_islands_map.values())
+            
+    return result
 
-# ==================================================================
-
-if __name__ == "__main__":
-    import json
-
-    INPUT_FILE  = "test_basic.json"
-    OUTPUT_FILE = "test_basic_parsed.json"
-
-    with open(INPUT_FILE, "r", encoding="utf-8-sig") as f:
-        raw = json.load(f)
-
-    parsed = parse_character(raw)
-
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(parsed, f, ensure_ascii=False, indent=2)
-
-    print(f"파싱 완료 → {OUTPUT_FILE}")
-    for k, v in parsed.items():
-        print(f"  {k}: {v}")
+def gold_island_to_embed(data: dict):
+    today_islands = data.get("today_gold_islands", [])
+    next_islands = data.get("next_gold_islands", [])
+    
+    if today_islands:
+        embed_title = f"오늘의 쌀섬 🐿️"
+        embed_desc = ""
+        for island in today_islands:
+            times_str = ", ".join([t.split('T')[1][:2] + "시" for t in island["StartTimes"]])
+            embed_desc += f"**{island['ContentsName']}** - {times_str}\n"
+    else:
+        if next_islands:
+            first_island = next_islands[0]
+            date_str = first_island['StartTimes'][0].split('T')[0]
+            embed_title = f"오늘은 쌀섬 없음!\n\n{date_str}의 쌀섬 🐿️"
+            embed_desc = ""
+            for island in next_islands:
+                times_str = ", ".join([t.split('T')[1][:2] + "시" for t in island["StartTimes"]])
+                embed_desc += f"**{island['ContentsName']}**\n{times_str}\n"
+        else:
+            embed_title = "쌀섬 정보 없음 🐿️"
+            embed_desc = "오늘은 쌀섬이 없어요!"
+    
+    embed = discord.Embed(
+        title = embed_title,
+        description = embed_desc,
+        color = discord.Color.random()
+    )
+    
+    # 첫 번째 섬의 ContentsIcon을 썸네일로 설정
+    islands = today_islands if today_islands else next_islands
+    if islands and islands[0].get("ContentsIcon"):
+        embed.set_thumbnail(url=islands[0]["ContentsIcon"])
+    
+    return embed
