@@ -351,6 +351,37 @@ def build_bot(is_test, logger_func):
 
         result = run_vercel(game_key, dolpa)
         await bot_msg(ctx, result)
+
+    @bot.hybrid_command(name="붕스리딤", description="지금 있는 붕스 리딤 정보")
+    async def show_redeem_code(ctx):
+        import json
+
+        json_path = os.path.join(BASE_DIR, 'hsr_gift_code.json')
+        with open(json_path, 'r', encoding='utf-8') as f:
+            gift_code_data = json.load(f)['gift_code_data']
+
+        tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(tz_kst).replace(tzinfo=None)
+
+        # valid_until이 현재 시각 이후인 항목만 필터링
+        valid_entries = [
+            entry for entry in gift_code_data
+            if datetime.datetime.fromisoformat(entry['valid_until']) > now
+        ]
+
+        if not valid_entries:
+            await bot_msg(ctx, "현재 유효한 붕스 리딤 코드는 없나봐요!")
+            return
+
+        lines = ["## <:jo:882988124718907392> 붕괴: 스타레일 리딤 코드"]
+        for entry in valid_entries:
+            valid_until_str = entry['valid_until'].replace("T", " ")
+            lines.append(f"**유효기간: {valid_until_str} (KST) 까지**")
+            for code in entry['codes']:
+                url = f"https://hsr.hoyoverse.com/gift?code={code}"
+                lines.append(f"- [{code}]({url})")
+
+        await bot_msg(ctx, "\n".join(lines))
         
 
 
