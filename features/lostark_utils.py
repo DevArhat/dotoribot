@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
 from logic import show_time_table_for_individual as stt
+from logic import show_schedule_for_individual as ssfi
 import lostark_api_module as api_module
 
 sc = SpaceController()
@@ -56,6 +57,39 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
     async def show_my_time_table(ctx):
         bot.add_log(ctx, "/내시간표")
         await bot_msg(ctx, stt(ctx), ephemeral=True)
+
+    @bot.hybrid_command(name="내일정", description="내 시간표 보기 (요일별 정리) ※ 수동 입력이라 부정확할 수 있음")
+    async def show_my_schedule(ctx):
+        bot.add_log(ctx, "/내일정")
+        result = ssfi(ctx)
+
+        # Embed 생성
+        embed = discord.Embed(
+            title=f"📅 {result['period']}",
+            description=f"**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**",
+            color=discord.Color.blue(),
+        )
+
+        # 오늘 일정 필드
+        embed.add_field(
+            name=f"🐿️ 오늘의 일정 ({result['today_count']}개)",
+            value=result['today_msg'] if result['today_msg'] else "오늘은 일정이 없어요! 🐿️",
+            inline=False,
+        )
+
+        # 요일별 필드 (mm/dd(요일) 형태 타이틀)
+        for day_name, entries in result['schedule_by_day'].items():
+            field_title = result['day_labels'].get(day_name, day_name)
+            field_value = "\n".join(entries) if entries else "일정 없는 날 🐿️"
+            embed.add_field(
+                name=field_title,
+                value=field_value,
+                inline=True,
+            )
+
+        embed.set_footer(text=f"이번주 일정: {result['total_remaining']}개")
+
+        await bot_msg(ctx, content=f"<@{result['user_id']}> 님의 일정", embed=embed, ephemeral=True)
 
 
     @bot.hybrid_command(name="쌀", description="경매 쌀산기")

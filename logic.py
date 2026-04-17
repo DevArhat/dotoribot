@@ -522,7 +522,9 @@ def show_time_table_for_individual(ctx):
     today_offset = _get_week_offset(effective_today)
 
     with open(TIME_TABLE_PATH, 'r', encoding='utf-8') as f:
-        full_table = json.load(f)
+        data = json.load(f)
+        full_table = data.get('tables', {})
+        period = data.get('period', '')
 
     full_table_sorted = {}
     for name, schedule in full_table.items():
@@ -586,8 +588,150 @@ def show_time_table_for_individual(ctx):
     today_table_msg = f"## 오늘의 일정! ({number_today}개)\n" + today_table_msg
     time_table_msg = f"## 전체 일정! ({number_total}개)\n" + time_table_msg
 
-    msg_context = f"## <@{user_id}> 님의 시간표\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n기준일자 2026-04-08 13:00"
+    msg_context = f"## <@{user_id}> 님의 시간표\n{period}\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n"
     return msg_context + today_table_msg + "\n" + time_table_msg
+
+
+_WEEKDAY_ORDER = ['수', '목', '금', '토', '일', '월', '화']
+
+def _parse_day_labels_from_period(period: str):
+    """
+    "4월 15일(수) ~ 4월 21일(화)" 형태의 period 문자열을 파싱하여
+    {'수': '04/15(수)', '목': '04/16(목)', ..., '화': '04/21(화)'} 형태의
+    OrderedDict를 반환한다.
+    파싱 실패 시 {'수': '수', ..., '화': '화'} 형태의 기본값 반환.
+    """
+    from collections import OrderedDict
+    labels = OrderedDict()
+    m = re.match(r'(\d+)월\s*(\d+)일\([^)]+\)', period)
+    if m:
+        month = int(m.group(1))
+        day = int(m.group(2))
+        # period가 반드시 수요일 시작이므로 현재 연도 기준으로 날짜 객체 생성
+        year = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).year
+        start_date = datetime.date(year, month, day)
+        for i, day_char in enumerate(_WEEKDAY_ORDER):
+            d = start_date + datetime.timedelta(days=i)
+            labels[day_char] = f"{d.month:02d}/{d.day:02d}({day_char})"
+    else:
+        for day_char in _WEEKDAY_ORDER:
+            labels[day_char] = day_char
+    return labels
+
+
+def show_schedule_for_individual(ctx):
+    """
+    /내일정 명령어용 함수.
+    반환: dict with keys:
+        - 'user_id': str
+        - 'period': str
+        - 'today_msg': str  (오늘 일정 텍스트, /내시간표 동일)
+        - 'today_count': int
+        - 'schedule_by_day': OrderedDict[str, list[str]]
+            수~화 순서, 각 value는 "(HH:mm) 제목 캐릭터" 형태 리스트
+        - 'day_labels': OrderedDict[str, str]
+            수~화 순서, 각 value는 "mm/dd(요일)" 형태 (Embed field title용)
+        - 'total_remaining': int (남은 일정 수)
+    """
+    from collections import OrderedDict
+
+    tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(tz_kst)
+
+    # 06시 기준 확장일
+    if now.hour < 6:
+        effective_today = (now.weekday() - 1) % 7
+        effective_hour = now.hour + 24
+        effective_minute = now.minute
+    else:
+        effective_today = now.weekday()
+        effective_hour = now.hour
+        effective_minute = now.minute
+
+    today_weekday = now.weekday()
+    today_offset = _get_week_offset(effective_today)
+
+    with open(TIME_TABLE_PATH, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        full_table = data.get('tables', {})
+        period = data.get('period', '')
+
+    full_table_sorted = {}
+    for name, schedule in full_table.items():
+        full_table_sorted[name] = sorted(schedule, key=sort_schedule)
+
+    username, user_id, _ = get_user_info_from_ctx(ctx)
+    current_user_table = full_table_sorted.get(str(user_id), [])
+    if not current_user_table:
+        userid_json_path = os.path.join(BASE_DIR, 'time_table_userid.json')
+        with open(userid_json_path, 'r', encoding='utf-8') as uf:
+            userid_map = json.load(uf)
+        korean_name = userid_map.get(str(user_id))
+        if korean_name:
+            current_user_table = full_table_sorted.get(korean_name, [])
+
+    # 오늘 일정 (내시간표와 동일)
+    today_entries = []
+    has_today_entry = False
+    for entry_str in current_user_table:
+        entry_str = str(entry_str)
+        if _WEEKDAY_MAP.get(entry_str[1], -1) == today_weekday:
+            today_entries.append(f"**{entry_str}**")
+            has_today_entry = True
+
+    today_count = len(today_entries)
+    if not has_today_entry:
+        today_msg = "오늘은 일정이 없어요! 🐿️"
+    else:
+        today_msg = "\n".join(today_entries)
+
+    # 요일별 그룹화 (남은 일정만)
+    schedule_by_day = OrderedDict()
+    for day_name in _WEEKDAY_ORDER:
+        schedule_by_day[day_name] = []
+
+    total_remaining = 0
+    for entry_str in current_user_table:
+        entry_str = str(entry_str)
+        resolved = _resolve_entry_day_and_time(entry_str)
+        if resolved is None:
+            continue
+
+        entry_day_num, entry_hour, entry_minute = resolved
+        entry_offset = _get_week_offset(entry_day_num)
+
+        # 지나간 일정 제외
+        # if entry_offset < today_offset:
+        #     continue
+        # elif entry_offset == today_offset:
+        #     if (entry_hour, entry_minute) <= (effective_hour, effective_minute):
+        #         continue
+
+        # 요일 이름 추출 & (HH:mm) 제목 캐릭터 형태로 변환
+        day_char = _WEEKDAY_NAMES[entry_day_num]
+        # 원본: "(요 HH:mm) 제목 캐릭터" → "(HH:mm) 제목 캐릭터"
+        m = re.match(r'\(\w\s(\d{2}:\d{2})\)\s*(.*)', entry_str)
+        if m:
+            time_part = m.group(1)
+            rest_part = m.group(2)
+            formatted = f"({time_part}) {rest_part}"
+        else:
+            formatted = entry_str
+
+        schedule_by_day[day_char].append(formatted)
+        total_remaining += 1
+
+    day_labels = _parse_day_labels_from_period(period)
+
+    return {
+        'user_id': str(user_id),
+        'period': period,
+        'today_msg': today_msg,
+        'today_count': today_count,
+        'schedule_by_day': schedule_by_day,
+        'day_labels': day_labels,
+        'total_remaining': total_remaining,
+    }
 
 
 def write_log(target, command, details, path):
