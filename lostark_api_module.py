@@ -72,6 +72,24 @@ class Lostark_Api:
             else:
                 return f"API 호출 오류: {response.status}"
 
+    async def get_engraving_book_price(self, book_name: str):
+        url = f"{self.base_url}/markets/items"
+
+        payload = {
+            "Sort": "CURRENT_MIN_PRICE",
+            "CategoryCode": 40000,
+            "ItemTier": 0,
+            "ItemName": book_name,
+            "PageNo": 1,
+            "SortCondition": "DESC"
+        }
+
+        async with self.session.post(url, headers=self.headers, json=payload) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                return f"API 호출 오류: {response.status}"
+
 
 def parse_character(data: dict) -> dict:
     """
@@ -137,8 +155,8 @@ def parse_character(data: dict) -> dict:
         4: 10
     }
     for e in effects:
-        name = sc.remove_space(e.get("Name", ""))
-        name = const.ENGRAVINGS_ABBR.get(name, name)
+        name = e.get("Name", "")
+        name = const.ENGRAVINGS_ABBR.get(name, [name])[0]
         level = e.get("Level")
         # AbilityStoneLevel 유무와 관계없이 Name + Level 은 engravings에 포함
         normal_parts.append(f"{name} ({level})")

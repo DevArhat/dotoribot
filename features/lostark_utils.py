@@ -1,3 +1,4 @@
+from discord.app_commands import describe
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
@@ -6,6 +7,7 @@ from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
 from logic import show_time_table_for_individual as stt
 from logic import show_schedule_for_individual as ssfi
 import lostark_api_module as api_module
+from const import ENGRAVINGS_ALIAS
 
 sc = SpaceController()
 
@@ -310,3 +312,59 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
             embed_temp.set_thumbnail(url=item['Icon'])
             embeds.append(embed_temp)
         await bot_msg(ctx, content="아비도스 가격 조사 완료! 🐿️", embeds=embeds)
+        
+
+    @bot.hybrid_command(name="유각", description="거래소에서 유각 가격 검색")
+    @app_commands.describe(
+        이름="검색할 유각"
+    )
+    async def show_engraving(ctx, 이름: str):
+        search_name = ENGRAVINGS_ALIAS.get(이름, 이름)
+        await bot_defer(ctx, f"{search_name} 각인서 가격 검색 중... 🐿️")
+
+        lapi = api_module.Lostark_Api(bot.session)
+        result = await lapi.get_engraving_book_price(search_name)
+
+        if isinstance(result, str):
+            bot.add_log(ctx, f"/유각 {이름}", f"[실패] {result}")
+            return await bot_msg(ctx, result, ephemeral=True)
+        
+        data = result.get('Items') or []
+        if not data:
+            bot.add_log(ctx, f"/유각 {이름}", "[실패] Items가 비어있음")
+            return await bot_msg(ctx, "검색 결과가 없어요! 🐿️", ephemeral=True)
+
+        embeds = []
+        current_price = 0
+
+        
+        for item in data:
+            if "유물" not in item['Name']:
+                continue
+
+            embed_temp = discord.Embed(
+                title=item['Name'],
+                description="조사 완료! 🐿️",
+                color=discord.Color.from_str("0xFA5D00"),
+            )
+            embed_temp.add_field(
+                name="현재 최저가",
+                value=f"{item['CurrentMinPrice']}",
+                inline=True
+            )
+            embed_temp.add_field(
+                name="어제 평균가",
+                value=f"{item['YDayAvgPrice']}",
+                inline=True
+            )
+            embed_temp.add_field(
+                name="최근 거래가",
+                value=f"{item['RecentPrice']}",
+                inline=True
+            )
+            embed_temp.set_thumbnail(url=item['Icon'])
+            embeds.append(embed_temp)
+            if current_price < int(item['CurrentMinPrice']):
+                current_price = int(item['CurrentMinPrice'])
+        bot.add_log(ctx, f"/유각 {이름}", f"[성공] {current_price}")
+        await bot_msg(ctx, content=f"{search_name} 유각 가격 조사 완료! 🐿️\n## {current_price:,}", embeds=embeds)
