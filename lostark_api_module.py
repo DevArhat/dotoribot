@@ -113,6 +113,7 @@ def parse_character(data: dict) -> dict:
             arkg_cores,
         }
     """
+    data = data or {}
     result = {}
 
     # ── ArmoryProfile ──────────────────────────────────────────────────────
@@ -155,15 +156,22 @@ def parse_character(data: dict) -> dict:
         4: 10
     }
     for e in effects:
+        if not isinstance(e, dict):
+            continue
         name = e.get("Name", "")
-        name = const.ENGRAVINGS_ABBR.get(name, [name])[0]
+        name = const.get_first_engraving_value(name)
         level = e.get("Level")
         # AbilityStoneLevel 유무와 관계없이 Name + Level 은 engravings에 포함
         normal_parts.append(f"{name} ({level})")
         # AbilityStoneLevel이 있는 항목만 ability_stone에 추가로 포함
         if e.get("AbilityStoneLevel") is not None:
-            temp_stone[name] = stone_level_dict[e['AbilityStoneLevel']]
+            temp_stone[name] = stone_level_dict.get(e["AbilityStoneLevel"])
     
+    temp_stone = {
+        name: level
+        for name, level in temp_stone.items()
+        if level is not None
+    }
     stone_parts = sorted(temp_stone.items(), key=lambda x: x[1], reverse=True)
 
 

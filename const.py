@@ -40,10 +40,34 @@ ENGRAVINGS_ABBR = {
     "분쇄의 주먹": ["분주", "분쇄의주먹"],
 }
 
+
+def get_first_engraving_value(engraving_name):
+    engraving_values = ENGRAVINGS_ABBR.get(engraving_name, [engraving_name])
+
+    while isinstance(engraving_values, list):
+        if not engraving_values:
+            return engraving_name
+        engraving_values = engraving_values[0]
+
+    return engraving_values
+
+
+def get_flattened_engraving_values(engraving_values):
+    flattened_values = []
+
+    for engraving_value in engraving_values:
+        if isinstance(engraving_value, list):
+            flattened_values.extend(get_flattened_engraving_values(engraving_value))
+            continue
+        flattened_values.append(engraving_value)
+
+    return flattened_values
+
+
 ENGRAVINGS_ALIAS = {
     alias: engraving
     for engraving, aliases in ENGRAVINGS_ABBR.items()
-    for alias in aliases
+    for alias in get_flattened_engraving_values(aliases)
 }
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, 'bot.log')

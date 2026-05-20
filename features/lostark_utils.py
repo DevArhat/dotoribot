@@ -1,7 +1,10 @@
+import os
+
 from discord.app_commands import describe
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
+from dotenv import load_dotenv as loadenv
 
 from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
 from logic import show_time_table_for_individual as stt
@@ -57,12 +60,30 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
         
     @bot.hybrid_command(name="내시간표", description="내 시간표 보기 ※ 수동 입력이라 부정확할 수 있음")
     async def show_my_time_table(ctx):
-        bot.add_log(ctx, "/내시간표")
+        # env TIME_TABLE_MODE
+        # 0 -> 아예 임시 비활성화
+        # 1 -> 활성화
+        # 2 -> 아직 갱신 안됨
+        loadenv(override=True)
+        bot.add_log(ctx, "/내시간표", f"MODE = {os.getenv('TIME_TABLE_MODE')}")
+        if os.getenv('TIME_TABLE_MODE') == '0':
+            return await bot_msg(ctx, content=f"이번주는 지능도토리 시간표 쉽니다! [시트]({os.getenv('DOTORI_RAID_SHEET')})를 봐주세요.")
+        if os.getenv('TIME_TABLE_MODE') == '2':
+            return await bot_msg(ctx, content=f"아직 시간표를 못 썼어요! 잠깐만 기다려줘!")
         await bot_msg(ctx, stt(ctx), ephemeral=True)
 
     @bot.hybrid_command(name="내일정", description="내 시간표 보기 (요일별 정리) ※ 수동 입력이라 부정확할 수 있음")
     async def show_my_schedule(ctx):
-        bot.add_log(ctx, "/내일정")
+        # env TIME_TABLE_MODE
+        # 0 -> 아예 임시 비활성화
+        # 1 -> 활성화
+        # 2 -> 아직 갱신 안됨
+        loadenv(override=True)
+        bot.add_log(ctx, "/내일정", f"MODE = {os.getenv('TIME_TABLE_MODE')}")
+        if os.getenv('TIME_TABLE_MODE') == '0':
+            return await bot_msg(ctx, content=f"이번주는 지능도토리 시간표 쉽니다! [시트]({os.getenv('DOTORI_RAID_SHEET')})를 봐주세요.")
+        if os.getenv('TIME_TABLE_MODE') == '2':
+            return await bot_msg(ctx, content=f"아직 시간표를 못 썼어요! 잠깐만 기다려줘!")
         result = ssfi(ctx)
 
         # Embed 생성
