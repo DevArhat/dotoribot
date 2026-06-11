@@ -504,6 +504,35 @@ def _resolve_entry_day_and_time(entry_text):
     return (day_num, hour, minute)
 
 
+def _extract_entry_time_text(entry_text):
+    m = re.search(r'\(\w\s(\d{2}:\d{2})\)', entry_text)
+    if not m:
+        return None
+
+    return m.group(1)
+
+
+def _build_today_schedule_msg(today_entries, is_bold=False):
+    if not today_entries:
+        return "오늘은 일정이 없어요! 🐿️"
+
+    start_time = _extract_entry_time_text(today_entries[0])
+    end_time = _extract_entry_time_text(today_entries[-1])
+    entry_lines = []
+
+    for today_entry in today_entries:
+        if is_bold:
+            entry_lines.append(f"**{today_entry}**")
+            continue
+
+        entry_lines.append(today_entry)
+
+    if start_time is None or end_time is None:
+        return "\n".join(entry_lines)
+
+    return f"**[ {start_time} ~ {end_time} ]**\n\n" + "\n".join(entry_lines)
+
+
 def show_time_table_for_individual(ctx):
     tz_kst = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(tz_kst)
@@ -548,16 +577,14 @@ def show_time_table_for_individual(ctx):
         today_table_msg = "오늘은 일정이 없어요! 🐿️"
         time_table_msg = "등록된 일정이 없어요! 🐿️"
     else:
-        has_today_entry = False
-        today_table_msg = ""
+        today_entries = []
         time_table_msg = ""
         for table_element in current_user_table:
             entry_str = str(table_element)
 
             if _WEEKDAY_MAP.get(entry_str[1], -1) == today_weekday:
-                today_table_msg += f"**{entry_str}**\n"
+                today_entries.append(entry_str)
                 number_today += 1
-                has_today_entry = True
 
             resolved = _resolve_entry_day_and_time(entry_str)
             if resolved is None:
@@ -582,10 +609,9 @@ def show_time_table_for_individual(ctx):
                 time_table_msg += f"{prefix} {entry_str}\n"
         if time_table_msg:
             time_table_msg = "```diff\n" + time_table_msg + "```"
-    if not has_today_entry:
-        today_table_msg = "오늘은 일정이 없어요! 🐿️"
+        today_table_msg = _build_today_schedule_msg(today_entries, is_bold=True)
 
-    today_table_msg = f"## 오늘의 일정! ({number_today}개)\n" + today_table_msg
+    today_table_msg = f"## 오늘의 일정! ({number_today}개) - " + today_table_msg
     time_table_msg = f"## 전체 일정! ({number_total}개)\n" + time_table_msg
 
     msg_context = f"## <@{user_id}> 님의 시간표\n{period}\n**주의: 부정확할 수 있습니다. 꼭 /시트 를 확인해 주세요!!**\n"
@@ -672,18 +698,13 @@ def show_schedule_for_individual(ctx):
 
     # 오늘 일정 (내시간표와 동일)
     today_entries = []
-    has_today_entry = False
     for entry_str in current_user_table:
         entry_str = str(entry_str)
         if _WEEKDAY_MAP.get(entry_str[1], -1) == today_weekday:
-            today_entries.append(f"**{entry_str}**")
-            has_today_entry = True
+            today_entries.append(entry_str)
 
     today_count = len(today_entries)
-    if not has_today_entry:
-        today_msg = "오늘은 일정이 없어요! 🐿️"
-    else:
-        today_msg = "\n".join(today_entries)
+    today_msg = _build_today_schedule_msg(today_entries, is_bold=True)
 
     # 요일별 그룹화 (남은 일정만)
     schedule_by_day = OrderedDict()
