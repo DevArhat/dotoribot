@@ -17,6 +17,7 @@ LOG_PATH = const.LOG_PATH
 KOSPI_TICKER_PATH = const.KOSPI_TICKER_PATH
 TEST_LOG_PATH = const.TEST_LOG_PATH
 TIME_TABLE_PATH = const.TIME_TABLE_PATH
+FULL_RAID_SHEET_PATH = const.FULL_RAID_SHEET_PATH
 
 class SpaceController:
     _SPACE_REPLACER = re.compile(r'\s{2,}')
@@ -531,6 +532,53 @@ def _build_today_schedule_msg(today_entries, is_bold=False):
         return "\n".join(entry_lines)
 
     return f"**[ {start_time} ~ {end_time} ]**\n\n" + "\n".join(entry_lines)
+
+
+def show_today_dotori_raids_for_individual(ctx):
+    """명령어 사용자의 오늘 도토리 레이드 목록을 반환."""
+    tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+    today_weekday = datetime.datetime.now(tz_kst).weekday()
+    today_day_name = _WEEKDAY_NAMES[today_weekday]
+
+    _, user_id, _ = get_user_info_from_ctx(ctx)
+    userid_json_path = os.path.join(BASE_DIR, 'time_table_userid.json')
+
+    with open(userid_json_path, 'r', encoding='utf-8') as user_file:
+        userid_map = json.load(user_file)
+    user_name = userid_map.get(str(user_id))
+
+    with open(FULL_RAID_SHEET_PATH, 'r', encoding='utf-8') as raid_file:
+        raid_data = json.load(raid_file)
+
+    today_raids = []
+    for raid_data_item in raid_data.get('raids', []):
+        raid_time = str(raid_data_item.get('time', ''))
+        time_match = re.fullmatch(r'([월화수목금토일])\s+(\d{1,2}:\d{2})', raid_time)
+        if time_match is None or time_match.group(1) != today_day_name:
+            continue
+
+        party_characters = []
+        for party_member in raid_data_item.get('party', []):
+            member_name, separator, character_name = str(party_member).partition('/')
+            if user_name and separator and member_name == user_name:
+                party_characters.append(character_name)
+
+        time_text = time_match.group(2)
+        raid_name = str(raid_data_item.get('name', '이름 없는 레이드'))
+        message = f"({today_day_name} {time_text}) {raid_name}"
+        if party_characters:
+            character_text = ', '.join(party_characters)
+            message += f" ★ [ {character_text} ]"
+            message = f"**{message}**"
+
+        hour_text, minute_text = time_text.split(':')
+        today_raids.append((int(hour_text), int(minute_text), message))
+
+    if not today_raids:
+        return "오늘은 일정이 없어요! 🐿️"
+
+    today_raids.sort(key=lambda raid_item: (raid_item[0], raid_item[1]))
+    return "## 오늘의 도토리! 🐿️\n" + "\n".join(raid_item[2] for raid_item in today_raids)
 
 
 def show_time_table_for_individual(ctx):

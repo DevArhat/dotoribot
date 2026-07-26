@@ -13,6 +13,7 @@ load_dotenv()
 sc = SpaceController()
 
 LOSTARK_API_KEY = os.getenv('LOSTARK_API_KEY')
+MIN_SIBLING_ITEM_LEVEL = 1700
 
 class Lostark_Api:
     def __init__(self, session):
@@ -236,18 +237,39 @@ def char_result_to_embed(data: dict):
 
     return embed
 
+def get_item_level_value(item_level) -> float:
+    try:
+        return float(str(item_level or '0').replace(',', ''))
+    except (ValueError, TypeError):
+        return 0
+
+
 def parse_siblings_list(data: list) -> list:
     result = []
-    filtered_list = [char for char in data if char['CharacterLevel'] >= 60]
+    profile_list = []
+
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+
+        profile = item.get("ArmoryProfile") or {}
+
+        if get_item_level_value(profile.get('ItemAvgLevel')) < MIN_SIBLING_ITEM_LEVEL:
+            continue
+
+        profile_list.append(profile)
 
     sorted_list = sorted(
-        filtered_list,
-        key=lambda x: float(str(x.get('ItemAvgLevel', '0')).replace(',', '')),
+        profile_list,
+        key=lambda x: get_item_level_value(x.get('ItemAvgLevel')),
         reverse = True
     )
 
     result = [
-        f"**{char['CharacterName']}** @ {char['ServerName']} : **{char['ItemAvgLevel']}** {char['CharacterClassName']}"
+        # f"**{char.get('CharacterName')}** @ {char.get('ServerName')} : "
+        f"**{char.get('CharacterName')}** : "
+        f"{char.get('ItemAvgLevel')} {char.get('CharacterClassName')} "
+        f"**({char.get('CombatPower', '정보 없음')})**"
         for char in sorted_list
     ]
     

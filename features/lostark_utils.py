@@ -9,6 +9,7 @@ from dotenv import load_dotenv as loadenv
 from logic import LostArkGuardian, SpaceController, calc_logic, calc_logic_v2
 from logic import show_time_table_for_individual as stt
 from logic import show_schedule_for_individual as ssfi
+from logic import show_today_dotori_raids_for_individual as stdrfi
 import lostark_api_module as api_module
 from const import ENGRAVINGS_ALIAS
 
@@ -24,6 +25,7 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
         if g[1] == "스콜라키아":
             add_msg = '안녕하세요이슬비기상술사입니다스콜은제가배럭으로도자주찾는가디언이고제가사랑하는정말경이로운가디언이죠이쿨감의매력을이천삼십년저와함께찾아보시지않겠어요스콜에서만나요편린을위하여다함께나가자1750가디언스콜라키아'
         msg = (f"# {g[1]} ({g[2]})\n{g[0]}\n{add_msg}")
+        msg = "# 공사중임니다\n가디언로테가 밖귀엇어요"
         await bot_msg(ctx, msg)
 
     @bot.hybrid_command(name="다음주가디언", description="다음주 가디언 정보")
@@ -35,6 +37,7 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
             add_msg = '안녕하세요이슬비기상술사입니다스콜은제가배럭으로도자주찾는가디언이고제가사랑하는정말경이로운가디언이죠이쿨감의매력을이천삼십년저와함께찾아보시지않겠어요스콜에서만나요편린을위하여다함께나가자1750가디언스콜라키아'
         
         msg = (f"# {g[4]} ({g[5]})\n{g[3]}\n{add_msg}")
+        msg = "# 공사중임니다\n가디언로테가 밖귀엇어요"
         await bot_msg(ctx, msg)
 
     @bot.tree.command(name="가디언예측", description="특정 날짜 가디언 예측하기")
@@ -114,6 +117,20 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
 
         await bot_msg(ctx, content=f"<@{result['user_id']}> 님의 일정", embed=embed, ephemeral=True)
 
+    @bot.hybrid_command(name="오늘의도토리", description="오늘의 도토리 레이드 보기")
+    async def show_today_dotori_raids(ctx):
+        # env TIME_TABLE_MODE
+        # 0 -> 아예 임시 비활성화
+        # 1 -> 활성화
+        # 2 -> 아직 갱신 안됨
+        loadenv(override=True)
+        bot.add_log(ctx, "/오늘의도토리", f"MODE = {os.getenv('TIME_TABLE_MODE')}")
+        if os.getenv('TIME_TABLE_MODE') == '0':
+            return await bot_msg(ctx, content=f"이번주는 지능도토리 시간표 쉽니다! [시트]({os.getenv('DOTORI_RAID_SHEET')})를 봐주세요.")
+        if os.getenv('TIME_TABLE_MODE') == '2':
+            return await bot_msg(ctx, content="아직 시간표를 못 썼어요! 잠깐만 기다려줘!")
+        await bot_msg(ctx, stdrfi(ctx), ephemeral=True)
+
 
     @bot.hybrid_command(name="쌀", description="경매 쌀산기")
     @app_commands.describe(
@@ -184,7 +201,7 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
 
         await bot_msg(ctx, content="전정실 보고왔다! 🐿️", embed=embed_result)
 
-    @bot.hybrid_command(name="부캐", description="전투레벨이 60 이상인 부캐 목록")
+    @bot.hybrid_command(name="부캐", description="아이템레벨 1700 이상인 부캐 목록")
     @app_commands.describe(
         캐릭터명="캐릭터명"
     )
@@ -197,8 +214,16 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
         if isinstance(result, str):
             bot.add_log(ctx, f"/부캐 {캐릭터명}", f"[실패] {result}")
             return await bot_msg(ctx, result, ephemeral=True)
+
+        import asyncio
+        sibling_list = [
+            char for char in result
+            if api_module.get_item_level_value(char.get('ItemAvgLevel')) >= api_module.MIN_SIBLING_ITEM_LEVEL
+        ]
+        tasks = [lapi.get_info(char['CharacterName']) for char in sibling_list]
+        detail_results = await asyncio.gather(*tasks)
         
-        parsed_result = api_module.parse_siblings_list(result)
+        parsed_result = api_module.parse_siblings_list(detail_results)
         embed_result = api_module.siblings_list_to_embed(parsed_result)
         bot.add_log(ctx, f"/부캐 {캐릭터명}", f"[성공]")
 
