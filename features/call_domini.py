@@ -9,7 +9,7 @@ from genai_module import call_genai
 PROMPT_PATH = os.path.join(BASE_DIR, "system_prompts.json")
 
 def domini_commands(bot, bot_msg, bot_defer):
-    @bot.hybrid_command(name="도미나이", description="도미나이에게 질문하기. 5분당 10회만 사용 가능합니다. 예고 없이 사라질 수 있음!")
+    @bot.command(name="deprecated_domini")
     @commands.cooldown(10, 300, commands.BucketType.user)    
     @app_commands.describe(
         질문="질문 내용"
@@ -33,7 +33,7 @@ def domini_commands(bot, bot_msg, bot_defer):
             await bot_msg(ctx, f"🐿️ 도미나이는 잠시 쉴래요... {error.retry_after:.2f}초 후에 다시 물어봐주세요.")
 
 
-    @bot.hybrid_command(name="파이논봇", description="파이논봇에게 질문하기. 5분당 10회만 사용 가능합니다. 예고 없이 사라질 수 있음!")
+    @bot.command(name="deprecated_phnbot")
     @commands.cooldown(10, 300, commands.BucketType.user)    
     @app_commands.describe(
         질문="질문 내용"

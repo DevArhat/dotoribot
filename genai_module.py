@@ -35,7 +35,7 @@ def call_genai(user_input: str, persona: str = 'DotoriBot'):
     :param persona: 사용할 페르소나 이름 (system_prompts.json의 키)
     :return: 모델의 응답 텍스트
     """
-    client = genai.Client(api_key=os.getenv('GEMINI_KEY'))
+    client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
     # 해당 페르소나 데이터 가져오기 (없으면 기본 DotoriBot 사용)
     persona_data = _SYSTEM_PROMPTS.get(persona)

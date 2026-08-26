@@ -5,6 +5,7 @@ from features.lostark_utils import lostark_utils_commands
 from features.show_stock import show_stock_commands
 from features.singing_dotori import singing_dotori_commands
 from features.call_domini import domini_commands
+from features.call_domini_v2 import domini_v2_commands
 
 
 
@@ -21,3 +22,4 @@ def load_all_commands(bot, bot_msg, bot_defer):
     show_stock_commands(*bot_func)
     singing_dotori_commands(*bot_func)
     domini_commands(*bot_func)
+    domini_v2_commands(*bot_func)
