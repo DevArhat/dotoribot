@@ -3,12 +3,10 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-
 import asyncio
 import base64
 import json
 import os
-
 
 from genai_exception import GeminiConfigurationError
 from genai_exception import GeminiExceptionFactory
@@ -24,11 +22,12 @@ API_KEY_ENV_NAME = "GEMINI_API_KEY"
 DEFAULT_IMAGE_ASPECT_RATIO = "16:9"
 DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
-DEFAULT_IMAGE_SIZE = "2K"
+DEFAULT_IMAGE_SIZE = "1K"
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_PERSONA = "DotoriBot"
-GEMINI_TIMEOUT_MILLISECONDS = 150000
-GEMINI_TIMEOUT_SECONDS = 150
+GOOGLE_SEARCH_INDICATOR = "\n\nUse the Google Search tool for information that requires up-to-date verification or when encountering unfamiliar proper nouns, terms, or entities."
+GEMINI_TIMEOUT_MILLISECONDS = 240000
+GEMINI_TIMEOUT_SECONDS = 240
 PROMPT_PATH = os.path.join(BASE_DIR, "system_prompts.json")
 
 
@@ -104,7 +103,7 @@ class DotoriGemini:
         contents.append(
             types.Content(
                 role="user",
-                parts=[types.Part(text=user_input)]
+                parts=[types.Part(text=user_input + GOOGLE_SEARCH_INDICATOR)]
             )
         )
         return instruction, contents
@@ -158,8 +157,11 @@ class DotoriGemini:
             async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
                 interaction = await self.client.aio.interactions.create(
                     model=DEFAULT_IMAGE_MODEL,
-                    input=prompt + "\n\n" + "Use the Google Search tool for information that requires up-to-date verification or when encountering unfamiliar proper nouns, terms, or entities.",
-                    tools=[{"type": "google_search"}],
+                    input=prompt + GOOGLE_SEARCH_INDICATOR,
+                    tools=[{
+                        "type": "google_search",
+                        "search_types": ["web_search", "image_search"]
+                        }],
                     response_format={
                         "type": "image",
                         "mime_type": mime_type,
@@ -181,6 +183,54 @@ class DotoriGemini:
             raise
         except Exception as error:
             print(f"[ERROR][GEMINI_GENERATE_IMAGE] Gemini 이미지 생성 실패: {error}")
+            raise
+
+    async def edit_image(
+        self,
+        prompt: str,
+        images: list[tuple[bytes, str]],
+        aspect_ratio: str = DEFAULT_IMAGE_ASPECT_RATIO,
+        image_size: str = DEFAULT_IMAGE_SIZE,
+        mime_type: str = DEFAULT_IMAGE_MIME_TYPE,
+    ) -> bytes:
+        """텍스트 프롬프트와 이미지 데이터를 이용한 이미지 편집."""
+        inputs = [{"type": "text", "text": prompt + GOOGLE_SEARCH_INDICATOR}]
+        inputs.extend(
+            {
+                "type": "image",
+                "data": base64.b64encode(image_data).decode("utf-8"),
+                "mime_type": image_mime_type,
+            }
+            for image_data, image_mime_type in images
+        )
+
+        try:
+            async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
+                interaction = await self.client.aio.interactions.create(
+                    model=DEFAULT_IMAGE_MODEL,
+                    input=inputs,
+                    tools=[{"type": "google_search"}],
+                    response_format={
+                        "type": "image",
+                        "mime_type": mime_type,
+                        "aspect_ratio": aspect_ratio,
+                        "image_size": image_size,
+                    },
+                )
+
+                if not interaction.output_image or not interaction.output_image.data:
+                    raise GeminiResponseError("Gemini 이미지 편집 응답 데이터 없음")
+
+                return base64.b64decode(interaction.output_image.data)
+        except TimeoutError as error:
+            GeminiExceptionFactory.raise_timeout_exception(error)
+        except genai_errors.APIError as error:
+            GeminiExceptionFactory.raise_exception(error)
+        except GeminiResponseError as error:
+            print(f"[ERROR][GEMINI_IMAGE_EDIT_RESPONSE] {error}")
+            raise
+        except Exception as error:
+            print(f"[ERROR][GEMINI_EDIT_IMAGE] Gemini 이미지 편집 실패: {error}")
             raise
     
             

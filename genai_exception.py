@@ -1,6 +1,5 @@
 from google.genai import errors as genai_errors
 
-
 from typing import Any, NoReturn
 
 
