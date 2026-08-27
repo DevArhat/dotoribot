@@ -9,37 +9,14 @@ import io
 from genai_module_v2 import DotoriGemini
 
 
-async def send_generated_image(ctx, content: str, image_file: discord.File):
-    """기존 로딩 메시지를 생성 이미지 응답으로 교체."""
-    interaction = (
-        ctx
-        if isinstance(ctx, discord.Interaction)
-        else getattr(ctx, "interaction", None)
-    )
-    if interaction:
-        return await interaction.edit_original_response(
-            content=content,
-            attachments=[image_file],
-        )
-
-    loading_message = getattr(ctx, "_last_bot_msg", None)
-    if loading_message:
-        return await loading_message.edit(
-            content=content,
-            attachments=[image_file],
-        )
-
-    return await ctx.send(content=content, file=image_file)
-
-
 def domini_v2_commands(bot, bot_msg, bot_defer):
     gemini_service = DotoriGemini()
 
     @bot.hybrid_command(
         name="이미지생성",
-        description="제미나이에게 이미지를 생성하도록 요청합니다. 5분당 10회만 사용 가능합니다.",
+        description="제미나이로 이미지 만들기! 10분당 5회만 사용 가능합니다. (사용량 엄청 많이 먹음ㄷㄷ)",
     )
-    @commands.cooldown(10, 300, commands.BucketType.user)
+    @commands.cooldown(5, 600, commands.BucketType.user)
     @app_commands.describe(
         프롬프트="생성할 이미지 설명"
     )
@@ -47,13 +24,14 @@ def domini_v2_commands(bot, bot_msg, bot_defer):
         request_query = 프롬프트[:30] + "..." if len(프롬프트) > 30 else 프롬프트
         response_header = f"원본 요청: `{request_query}`"
 
-        await bot_defer(ctx, defer_msg="제미나이가 이미지를 그리고 있어요...")
+        await bot_defer(ctx)
+        msg = await bot_msg(ctx, "제미나이가 이미지를 그리고 있어요...")
         image_data = await gemini_service.generate_image(프롬프트)
         bot.add_log(ctx, "/이미지생성", 프롬프트)
 
         with io.BytesIO(image_data) as image_stream:
             image_file = discord.File(image_stream, filename="gemini_image.jpg")
-            await send_generated_image(ctx, response_header, image_file)
+            await msg.edit(content=response_header, attachments=[image_file])
 
     @generate_gemini_image.error
     async def generate_gemini_image_error(ctx, error):
