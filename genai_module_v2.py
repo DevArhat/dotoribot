@@ -158,7 +158,8 @@ class DotoriGemini:
             async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
                 interaction = await self.client.aio.interactions.create(
                     model=DEFAULT_IMAGE_MODEL,
-                    input=prompt,
+                    input=prompt + "\n\n" + "Use the Google Search tool for information that requires up-to-date verification or when encountering unfamiliar proper nouns, terms, or entities.",
+                    tools=[{"type": "google_search"}],
                     response_format={
                         "type": "image",
                         "mime_type": mime_type,
