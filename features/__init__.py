@@ -6,6 +6,7 @@ from features.show_stock import show_stock_commands
 from features.singing_dotori import singing_dotori_commands
 from features.call_domini import domini_commands
 from features.call_domini_v2 import domini_v2_commands
+from features.domini_vision import domini_vision_commands
 
 
 
@@ -23,3 +24,4 @@ def load_all_commands(bot, bot_msg, bot_defer):
     singing_dotori_commands(*bot_func)
     domini_commands(*bot_func)
     domini_v2_commands(*bot_func)
+    domini_vision_commands(*bot_func)

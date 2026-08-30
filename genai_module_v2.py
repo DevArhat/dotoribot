@@ -126,16 +126,18 @@ class DotoriGemini:
             ]
 
         try:
-            async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
-                response = await self.client.aio.models.generate_content(
+            response = await asyncio.wait_for(
+                self.client.aio.models.generate_content(
                     model=self.model,
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=instruction,
                         tools=[types.Tool(google_search=types.GoogleSearch())],
                     ),
-                )
-        except TimeoutError as error:
+                ),
+                timeout=GEMINI_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as error:
             GeminiExceptionFactory.raise_timeout_exception(error)
         except genai_errors.APIError as error:
             GeminiExceptionFactory.raise_exception(error)
@@ -154,8 +156,8 @@ class DotoriGemini:
     ) -> bytes:
         """Gemini Interactions API 기반 이미지 데이터 생성."""
         try:
-            async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
-                interaction = await self.client.aio.interactions.create(
+            interaction = await asyncio.wait_for(
+                self.client.aio.interactions.create(
                     model=DEFAULT_IMAGE_MODEL,
                     input=prompt + GOOGLE_SEARCH_INDICATOR,
                     tools=[{
@@ -168,13 +170,15 @@ class DotoriGemini:
                         "aspect_ratio": aspect_ratio,
                         "image_size": image_size,
                     },
-                )
+                ),
+                timeout=GEMINI_TIMEOUT_SECONDS,
+            )
 
-                if not interaction.output_image or not interaction.output_image.data:
-                    raise GeminiResponseError("Gemini 이미지 응답 데이터 없음")
+            if not interaction.output_image or not interaction.output_image.data:
+                raise GeminiResponseError("Gemini 이미지 응답 데이터 없음")
 
-                return base64.b64decode(interaction.output_image.data)
-        except TimeoutError as error:
+            return base64.b64decode(interaction.output_image.data)
+        except asyncio.TimeoutError as error:
             GeminiExceptionFactory.raise_timeout_exception(error)
         except genai_errors.APIError as error:
             GeminiExceptionFactory.raise_exception(error)
@@ -205,8 +209,8 @@ class DotoriGemini:
         )
 
         try:
-            async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
-                interaction = await self.client.aio.interactions.create(
+            interaction = await asyncio.wait_for(
+                self.client.aio.interactions.create(
                     model=DEFAULT_IMAGE_MODEL,
                     input=inputs,
                     tools=[{"type": "google_search"}],
@@ -216,13 +220,15 @@ class DotoriGemini:
                         "aspect_ratio": aspect_ratio,
                         "image_size": image_size,
                     },
-                )
+                ),
+                timeout=GEMINI_TIMEOUT_SECONDS,
+            )
 
-                if not interaction.output_image or not interaction.output_image.data:
-                    raise GeminiResponseError("Gemini 이미지 편집 응답 데이터 없음")
+            if not interaction.output_image or not interaction.output_image.data:
+                raise GeminiResponseError("Gemini 이미지 편집 응답 데이터 없음")
 
-                return base64.b64decode(interaction.output_image.data)
-        except TimeoutError as error:
+            return base64.b64decode(interaction.output_image.data)
+        except asyncio.TimeoutError as error:
             GeminiExceptionFactory.raise_timeout_exception(error)
         except genai_errors.APIError as error:
             GeminiExceptionFactory.raise_exception(error)
