@@ -1,4 +1,7 @@
+import asyncio
 import os
+
+import aiohttp
 
 from discord.app_commands import describe
 import discord
@@ -132,53 +135,75 @@ def lostark_utils_commands(bot, bot_msg, bot_defer):
         await bot_msg(ctx, stdrfi(ctx), ephemeral=True)
 
 
+    async def send_rice_result(ctx, price, command, search_name=None):
+        logic_response = calc_logic(price, 4)
+        if isinstance(logic_response, str):
+            bot.add_log(ctx, command, f"가격: {price}, 응답: {logic_response}")
+            return await bot_msg(ctx, logic_response)
+
+        response_fields = [f"거래소 가격: {price:,} 골드"]
+        for count in (4, 8):
+            recommended_bid = calc_logic(price, count)[1][1]
+            first_bid = calc_logic_v2(price, count)[1][1]
+            response_fields.extend([
+                f"{count}인 추천입찰가: {recommended_bid:} 골드",
+                f"{count}인 선점입찰가: {first_bid:} 골드",
+            ])
+
+        bot.add_log(ctx, command, ", ".join(response_fields))
+        response_text = "```python\n# "
+        response_text += "\n".join(response_fields) + "```"
+        if search_name:
+            response_text = f"{search_name} 유각 쌀산기! 🐿️\n" + response_text
+        await bot_msg(ctx, response_text)
+
     @bot.hybrid_command(name="쌀", description="경매 쌀산기")
-    @app_commands.describe(
-        거래소="경매템 가격",
-        컨텐츠인원="몇인팟 컨텐츠임?"
-    )
-    async def calculate(ctx, 거래소: int, 컨텐츠인원: int):
-        logic_response = calc_logic(거래소, 컨텐츠인원)
-        
-        response_text = logic_response[0]
-        response_tuple = logic_response[1]
-        
-        if type(response_tuple) == tuple:
-            bot.add_log(ctx,
-                    "/쌀",
-                    f"가격: {거래소}, 인원수: {컨텐츠인원}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
-            await bot_msg(ctx, response_text)
-        else:
-            bot.add_log(ctx,
-                        "/쌀",
-                        f"가격: {거래소}, 인원수: {컨텐츠인원}, 응답: {logic_response}"
-                        )
-            await bot_msg(ctx, logic_response)
+    @app_commands.describe(거래소="경매템 가격")
+    async def calculate(ctx, 거래소: int):
+        await send_rice_result(ctx, 거래소, "/쌀")
 
+    @bot.hybrid_command(name="검색쌀", description="유각 최근 거래가로 경매 쌀산기")
+    @app_commands.describe(검색각인서="검색할 유각 (줄임말도 가능)")
+    async def search_rice(ctx, *, 검색각인서: str):
+        search_name = 검색각인서.strip()
+        search_name = ENGRAVINGS_ALIAS.get(search_name, search_name)
+        command = f"/검색쌀 {검색각인서}"
+        if not search_name:
+            bot.add_log(ctx, command, "[실패] 검색각인서가 비어있음")
+            return await bot_msg(ctx, "검색할 각인서를 입력해줘! 🐿️")
 
-    @bot.hybrid_command(name="선점쌀", description="경매 쌀산기 (선점가)")
-    @app_commands.describe(
-        거래소="경매템 가격",
-        컨텐츠인원="몇인팟 컨텐츠임?"
-    )
-    async def calculate_v2(ctx, 거래소: int, 컨텐츠인원: int):
-        logic_response = calc_logic_v2(거래소, 컨텐츠인원)
-        
-        response_text = logic_response[0]
-        response_tuple = logic_response[1]
-        
-        if type(response_tuple) == tuple:
-            bot.add_log(ctx,
-                    "/쌀",
-                    f"가격: {거래소}, 인원수: {컨텐츠인원}, 추천입찰가: {response_tuple[1]:,}G, 분배금: {response_tuple[2]:,}G, 판매금: {response_tuple[3]:,}G")
-            # interaction.response.send_message를 통해 답장을 보냅니다.
-            await bot_msg(ctx, response_text)
-        else:
-            bot.add_log(ctx,
-                        "/쌀",
-                        f"가격: {거래소}, 인원수: {컨텐츠인원}, 응답: {logic_response}"
-                        )
-            await bot_msg(ctx, logic_response) # type: ignore
+        await bot_defer(ctx, f"{search_name} 각인서 가격 검색 중... 🐿️")
+        lapi = api_module.Lostark_Api(bot.session)
+        try:
+            result = await lapi.get_engraving_book_price(search_name)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+            bot.add_log(ctx, command, f"[실패] API 호출 오류: {type(error).__name__}")
+            return await bot_msg(ctx, "가격 검색에 실패했어! 잠시 후 다시 해줘! 🐿️")
+
+        if isinstance(result, str):
+            bot.add_log(ctx, command, f"[실패] {result}")
+            return await bot_msg(ctx, result, ephemeral=True)
+
+        data = (result.get('Items') or []) if isinstance(result, dict) else []
+        matching_items = [
+            item for item in data
+            if isinstance(item, dict)
+            and item.get('Name', '').replace('각인서', '').replace(
+                '유물', ''
+            ).translate(str.maketrans('', '', '[]() '))
+            == search_name.replace(' ', '')
+            and (item.get('Grade') == "유물" or "유물" in item.get('Name', ''))
+        ]
+        if len(matching_items) != 1:
+            bot.add_log(ctx, command, "[실패] 유물 각인서 검색 결과 없음 또는 중복")
+            return await bot_msg(ctx, "유각을 못찾았어! 각인서 이름을 확인해줘! 🐿️")
+
+        price = matching_items[0].get('RecentPrice')
+        if type(price) is not int or price <= 0:
+            bot.add_log(ctx, command, "[실패] 최근 거래가 없음")
+            return await bot_msg(ctx, "최근 거래가가 없어서 계산할 수 없어요! 🐿️")
+
+        await send_rice_result(ctx, price, command, search_name)
 
     @bot.hybrid_command(name="정보", description="전투정보실 기본정보를 가져옵니다")
     @app_commands.describe(
