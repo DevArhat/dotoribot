@@ -1,5 +1,9 @@
 import os
 
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+SMART_GEMINI_MODEL = "gemini-3.8-flash"
+DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
+
 ENGRAVINGS_ABBR = {
     "원한":       ["원한"],
     "돌격대장":   ["돌대", "돌격"],

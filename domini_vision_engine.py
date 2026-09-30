@@ -7,9 +7,9 @@ import base64
 import json
 import os
 
+from const import DEFAULT_GEMINI_MODEL
 from genai_exception import GeminiExceptionFactory
 from genai_exception import GeminiResponseError
-from genai_module_v2 import DEFAULT_MODEL
 from genai_module_v2 import DotoriGemini
 from genai_module_v2 import GEMINI_TIMEOUT_SECONDS
 
@@ -177,7 +177,7 @@ class DominiVisionEngine:
         try:
             response = await asyncio.wait_for(
                 self.gemini_service.client.aio.models.generate_content(
-                    model=DEFAULT_MODEL,
+                    model=DEFAULT_GEMINI_MODEL,
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=instruction,

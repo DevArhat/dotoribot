@@ -8,6 +8,7 @@ import base64
 import json
 import os
 
+from const import DEFAULT_GEMINI_MODEL, DEFAULT_IMAGE_MODEL
 from genai_exception import GeminiConfigurationError
 from genai_exception import GeminiExceptionFactory
 from genai_exception import GeminiResponseError
@@ -21,9 +22,7 @@ dotenv.load_dotenv(override=True)
 API_KEY_ENV_NAME = "GEMINI_API_KEY"
 DEFAULT_IMAGE_ASPECT_RATIO = "16:9"
 DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
-DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
 DEFAULT_IMAGE_SIZE = "1K"
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_PERSONA = "DotoriBot"
 GOOGLE_SEARCH_INDICATOR = "\n\nUse the Google Search tool for information that requires up-to-date verification or when encountering unfamiliar proper nouns, terms, or entities."
 GEMINI_TIMEOUT_MILLISECONDS = 240000
@@ -37,7 +36,7 @@ class DotoriGemini:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str = DEFAULT_GEMINI_MODEL,
         prompt_path: str = PROMPT_PATH,
     ):
         self.model = model
@@ -113,6 +112,9 @@ class DotoriGemini:
         self,
         user_input: str,
         persona: str | None = DEFAULT_PERSONA,
+        *,
+        model: str | None = None,
+        thinking_level: str | None = None,
     ) -> str:
         if persona is not None:
             instruction, contents = self.build_contents(user_input, persona)
@@ -128,11 +130,15 @@ class DotoriGemini:
         try:
             response = await asyncio.wait_for(
                 self.client.aio.models.generate_content(
-                    model=self.model,
+                    model=model if model is not None else self.model,
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=instruction,
                         tools=[types.Tool(google_search=types.GoogleSearch())],
+                        thinking_config=(
+                            types.ThinkingConfig(thinking_level=thinking_level)
+                            if thinking_level is not None else None
+                        ),
                     ),
                 ),
                 timeout=GEMINI_TIMEOUT_SECONDS,
