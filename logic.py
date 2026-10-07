@@ -578,7 +578,8 @@ def show_today_dotori_raids_for_individual(ctx):
         return "오늘은 일정이 없어요! 🐿️"
 
     today_raids.sort(key=lambda raid_item: (raid_item[0], raid_item[1]))
-    return "## 오늘의 도토리! 🐿️\n" + "\n".join(raid_item[2] for raid_item in today_raids)
+    today_str = datetime.datetime.now(tz_kst).strftime("(%m/%d)")
+    return f"## 오늘의 도토리! {today_str} 🐿️\n" + "\n".join(raid_item[2] for raid_item in today_raids)
 
 
 def show_time_table_for_individual(ctx):
